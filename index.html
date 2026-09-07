@@ -441,7 +441,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const FIELD_MAP = {
   teachers: {userId:'user_id', certificateUrl:'certificate_url', highlightUrl:'highlight_url', isLive:'is_live', totalStudentsTaught:'total_students_taught', certificateLevel:'certificate_level'},
-  students: {userId:'user_id', teacherId:'teacher_id', parentPhone:'parent_phone', telegramChatId:'telegram_chat_id'},
+  students: {userId:'user_id', teacherId:'teacher_id', parentPhone:'parent_phone', telegramChatId:'telegram_chat_id', scheduleSlotId:'schedule_slot_id'},
   schedule: {teacherId:'teacher_id'},
   attendance: {studentId:'student_id', tasksDone:'tasks_done'},
   payments: {studentId:'student_id', paidUntil:'paid_until'},
@@ -593,7 +593,9 @@ function openRegisterModal(){
       <h3>O'quvchi sifatida ro'yxatdan o'tish</h3>
       <label>Ism familiya</label><input type="text" id="reg-name">
       <label>O'qituvchingiz</label>
-      <select id="reg-teacher"><option value="">— tanlang —</option>${teacherOpts}</select>
+      <select id="reg-teacher" onchange="onTeacherSelectChange('reg-teacher','reg-schedule')"><option value="">— tanlang —</option>${teacherOpts}</select>
+      <label>Dars vaqti</label>
+      <select id="reg-schedule"><option value="">— avval o'qituvchini tanlang —</option></select>
       <label>Login (o'zingiz tanlang)</label><input type="text" id="reg-username">
       <label>Parol</label><input type="password" id="reg-password">
       <label>Telegram Chat ID (ixtiyoriy, eslatmalar uchun)</label><input type="text" id="reg-telegram" placeholder="masalan: 123456789">
@@ -609,16 +611,19 @@ function openRegisterModal(){
 async function submitRegistration(){
   const name = document.getElementById('reg-name').value.trim();
   const teacherId = document.getElementById('reg-teacher').value;
+  const scheduleSlotId = document.getElementById('reg-schedule').value || null;
   const username = document.getElementById('reg-username').value.trim();
   const password = document.getElementById('reg-password').value;
   const telegramChatId = document.getElementById('reg-telegram').value.trim();
   const err = document.getElementById('reg-err');
   if(!name || !teacherId || !username || !password){ err.textContent = 'Barcha maydonlarni to\'ldiring.'; return; }
   if(DB.users.some(u=>u.username===username)){ err.textContent = 'Bu login band. Boshqasini tanlang.'; return; }
+  const slot = scheduleSlotId ? DB.schedule.find(x=>x.id===scheduleSlotId) : null;
+  const group = slot ? slot.subject : '';
   try{
     const newUser = await insertRow('users', {username, password, role:'student', name, phone:'', status:'pending'});
     DB.users.push(newUser);
-    const newStudent = await insertRow('students', {userId:newUser.id, group:'', teacherId, telegramChatId});
+    const newStudent = await insertRow('students', {userId:newUser.id, group, teacherId, telegramChatId, scheduleSlotId});
     DB.students.push(newStudent);
   }catch(e){
     err.textContent = 'Xatolik yuz berdi. Qayta urinib ko\'ring.';
@@ -1222,9 +1227,11 @@ function openStudentModal(teacherOptsHtml){
     <div class="modal">
       <h3>Yangi o'quvchi</h3>
       <label>To'liq ism</label><input type="text" id="s-name">
-      <label>Guruh</label><input type="text" id="s-group" placeholder="masalan: A2-1">
       <label>O'qituvchi</label>
-      <select id="s-teacher"><option value="">— tanlang —</option>${teacherOptsHtml}</select>
+      <select id="s-teacher" onchange="onTeacherSelectChange('s-teacher','s-schedule')"><option value="">— tanlang —</option>${teacherOptsHtml}</select>
+      <label>Dars vaqti</label>
+      <select id="s-schedule" onchange="onScheduleSelectChange('s-schedule','s-group')"><option value="">— avval o'qituvchini tanlang —</option></select>
+      <label>Guruh (avtomatik to'ldiriladi, xohlasangiz o'zgartiring)</label><input type="text" id="s-group" placeholder="masalan: A2-1">
       <label>Ota-ona/vasiy telefon raqami</label><input type="text" id="s-parent-phone" placeholder="+998...">
       <label>Daraja</label>
       <select id="s-level">
@@ -1246,6 +1253,7 @@ async function saveStudent(){
   const name = document.getElementById('s-name').value.trim();
   const group = document.getElementById('s-group').value.trim();
   const teacherId = document.getElementById('s-teacher').value;
+  const scheduleSlotId = document.getElementById('s-schedule').value || null;
   const parentPhone = document.getElementById('s-parent-phone').value.trim();
   const level = document.getElementById('s-level').value;
   const telegramChatId = document.getElementById('s-telegram').value.trim();
@@ -1263,7 +1271,7 @@ async function saveStudent(){
   try{
     const newUser = await insertRow('users', {username, password, role:'student', name, phone:''});
     DB.users.push(newUser);
-    const newStudent = await insertRow('students', {userId:newUser.id, group, teacherId: teacherId||null, parentPhone, level, telegramChatId});
+    const newStudent = await insertRow('students', {userId:newUser.id, group, teacherId: teacherId||null, parentPhone, level, telegramChatId, scheduleSlotId});
     DB.students.push(newStudent);
   }catch(e){
     err.textContent = 'Xatolik yuz berdi. Qayta urinib ko\'ring.';
@@ -1286,9 +1294,11 @@ function openStudentEditModal(studentId){
   bg.innerHTML = `
     <div class="modal">
       <h3>Tahrirlash — ${u?u.name:''}</h3>
-      <label>Guruh</label><input type="text" id="se-group" value="${(s.group||'').replace(/"/g,'&quot;')}">
       <label>O'qituvchi</label>
-      <select id="se-teacher"><option value="">— tanlang —</option>${teacherOpts}</select>
+      <select id="se-teacher" onchange="onTeacherSelectChange('se-teacher','se-schedule')"><option value="">— tanlang —</option>${teacherOpts}</select>
+      <label>Dars vaqti</label>
+      <select id="se-schedule" onchange="onScheduleSelectChange('se-schedule','se-group')">${s.teacherId?scheduleOptionsForTeacher(s.teacherId, s.scheduleSlotId):'<option value="">— avval o\'qituvchini tanlang —</option>'}</select>
+      <label>Guruh (avtomatik to'ldiriladi, xohlasangiz o'zgartiring)</label><input type="text" id="se-group" value="${(s.group||'').replace(/"/g,'&quot;')}">
       <label>Daraja</label>
       <select id="se-level">
         <option value="" ${!s.level?'selected':''}>— tanlanmagan —</option>
@@ -1308,14 +1318,15 @@ function openStudentEditModal(studentId){
 async function saveStudentEdit(studentId){
   const group = document.getElementById('se-group').value.trim();
   const teacherId = document.getElementById('se-teacher').value || null;
+  const scheduleSlotId = document.getElementById('se-schedule').value || null;
   const level = document.getElementById('se-level').value;
   const parentPhone = document.getElementById('se-parent-phone').value.trim();
   const telegramChatId = document.getElementById('se-telegram').value.trim();
   const err = document.getElementById('se-err');
   try{
-    await updateRow('students', studentId, {group, teacherId, level, parentPhone, telegramChatId});
+    await updateRow('students', studentId, {group, teacherId, level, parentPhone, telegramChatId, scheduleSlotId});
     const s = DB.students.find(x=>x.id===studentId);
-    if(s) Object.assign(s, {group, teacherId, level, parentPhone, telegramChatId});
+    if(s) Object.assign(s, {group, teacherId, level, parentPhone, telegramChatId, scheduleSlotId});
   }catch(e){
     err.textContent = 'Xatolik yuz berdi.'; console.error(e); return;
   }
@@ -1356,11 +1367,34 @@ function isSlotToday(day){
   if(day==='Juft') return [1,3,5].includes(idx); // Sesh/Pay/Shan
   return false;
 }
+function scheduleOptionsForTeacher(teacherId, selectedId){
+  const slots = DB.schedule.filter(s=>s.teacherId===teacherId).slice()
+    .sort((a,b)=> DAYS.indexOf(a.day)-DAYS.indexOf(b.day) || a.time.localeCompare(b.time));
+  if(!slots.length) return '<option value="">— bu o\'qituvchida dars vaqti kiritilmagan —</option>';
+  return '<option value="">— tanlang —</option>' + slots.map(sl=>
+    `<option value="${sl.id}" ${sl.id===selectedId?'selected':''}>${dayLabel(sl.day)} — ${sl.time} — ${sl.subject}</option>`
+  ).join('');
+}
+function onTeacherSelectChange(teacherSelectId, scheduleSelectId){
+  const teacherId = document.getElementById(teacherSelectId).value;
+  const scheduleSelect = document.getElementById(scheduleSelectId);
+  scheduleSelect.innerHTML = teacherId ? scheduleOptionsForTeacher(teacherId, null) : '<option value="">— avval o\'qituvchini tanlang —</option>';
+}
+function onScheduleSelectChange(scheduleSelectId, groupInputId){
+  const sel = document.getElementById(scheduleSelectId);
+  const slot = DB.schedule.find(x=>x.id===sel.value);
+  const groupInput = document.getElementById(groupInputId);
+  if(slot && groupInput) groupInput.value = slot.subject;
+}
 async function sendLessonReminder(slotId){
   const slot = DB.schedule.find(x=>x.id===slotId);
   if(!slot) return;
-  let targets = DB.students.filter(s=>s.teacherId===slot.teacherId && s.telegramChatId && s.group && slot.subject && s.group.trim().toLowerCase()===slot.subject.trim().toLowerCase());
+  let targets = DB.students.filter(s=>s.teacherId===slot.teacherId && s.telegramChatId && s.scheduleSlotId===slotId);
   let fallback = false;
+  if(!targets.length){
+    targets = DB.students.filter(s=>s.teacherId===slot.teacherId && s.telegramChatId && s.group && slot.subject && s.group.trim().toLowerCase()===slot.subject.trim().toLowerCase());
+    fallback = true;
+  }
   if(!targets.length){
     targets = DB.students.filter(s=>s.teacherId===slot.teacherId && s.telegramChatId);
     fallback = true;
@@ -1375,7 +1409,7 @@ async function sendLessonReminder(slotId){
     const res = await sendTelegramMessage(s.telegramChatId, text);
     if(res && res.ok) sent++;
   }
-  alert(`✅ Eslatma ${sent} ta o'quvchiga yuborildi.${fallback?' (Aniq guruh mos kelmagani uchun o\'qituvchining barcha ulangan o\'quvchilariga yuborildi.)':''}`);
+  alert(`✅ Eslatma ${sent} ta o'quvchiga yuborildi.${fallback?' (Aniq dars vaqtiga bog\'langan o\'quvchi topilmagani uchun kengroq ro\'yxatga yuborildi.)':''}`);
 }
 function renderScheduleAdmin(){
   const rows = DB.schedule.slice().sort((a,b)=> DAYS.indexOf(a.day)-DAYS.indexOf(b.day) || a.time.localeCompare(b.time))
