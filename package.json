@@ -1,0 +1,8 @@
+{
+  "name": "pushkina-site",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "npx serve -s . -l $PORT"
+  }
+}
