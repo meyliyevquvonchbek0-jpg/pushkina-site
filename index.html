@@ -574,6 +574,24 @@ async function boot(){
     DB.dailyTotals = await fetchTable('daily_totals');
     renderSocialFloat();
     renderLandingContent();
+    try{
+      const saved = localStorage.getItem('pushkina_session');
+      if(saved){
+        const parsed = JSON.parse(saved);
+        const user = DB.users.find(x=>x.id===parsed.userId);
+        if(user && user.status!=='pending'){
+          session = {userId:user.id, role:user.role};
+          document.getElementById('landing-screen').classList.add('hide');
+          document.getElementById('login-screen').classList.remove('show');
+          document.getElementById('app').classList.add('show');
+          activeTab = 'home';
+          renderNav();
+          renderMain();
+        }else{
+          localStorage.removeItem('pushkina_session');
+        }
+      }
+    }catch(e){ console.error('session restore error', e); }
   }catch(e){
     document.getElementById('landing-about').textContent = 'Serverga ulanib bo\'lmadi. Internetni tekshiring.';
     console.error(e);
@@ -812,6 +830,7 @@ function handleLogin(){
   }
   errBox.textContent = '';
   session = {userId:user.id, role:user.role};
+  try{ localStorage.setItem('pushkina_session', JSON.stringify(session)); }catch(e){}
   document.getElementById('landing-screen').classList.add('hide');
   document.getElementById('login-screen').classList.remove('show');
   document.getElementById('app').classList.add('show');
@@ -821,6 +840,7 @@ function handleLogin(){
 }
 function handleLogout(){
   session = null;
+  try{ localStorage.removeItem('pushkina_session'); }catch(e){}
   document.getElementById('app').classList.remove('show');
   showLanding();
   document.getElementById('login-username').value='';
@@ -1386,6 +1406,28 @@ function onScheduleSelectChange(scheduleSelectId, groupInputId){
   const groupInput = document.getElementById(groupInputId);
   if(slot && groupInput) groupInput.value = slot.subject;
 }
+async function sendAllTodayReminders(teacherIdFilter){
+  const todaySlots = DB.schedule.filter(sl => isSlotToday(sl.day) && (!teacherIdFilter || sl.teacherId===teacherIdFilter));
+  if(!todaySlots.length){
+    alert('Bugun uchun dars jadvalida hech qanday dars topilmadi.');
+    return;
+  }
+  let totalSent = 0;
+  let slotsWithNoStudents = 0;
+  for(const slot of todaySlots){
+    let targets = DB.students.filter(s=>s.teacherId===slot.teacherId && s.telegramChatId && s.scheduleSlotId===slot.id);
+    if(!targets.length){
+      targets = DB.students.filter(s=>s.teacherId===slot.teacherId && s.telegramChatId && s.group && slot.subject && s.group.trim().toLowerCase()===slot.subject.trim().toLowerCase());
+    }
+    if(!targets.length){ slotsWithNoStudents++; continue; }
+    const text = `📚 Bugun sizda dars bor!\n\n🕒 Vaqt: ${slot.time}\n👥 Guruh: ${slot.subject}\n👨‍🏫 O'qituvchi: ${teacherName(slot.teacherId)}${slot.room?`\n🚪 Xona: ${slot.room}`:''}`;
+    for(const s of targets){
+      const res = await sendTelegramMessage(s.telegramChatId, text);
+      if(res && res.ok) totalSent++;
+    }
+  }
+  alert(`✅ Jami ${totalSent} ta o'quvchiga eslatma yuborildi (${todaySlots.length} ta bugungi dars bo'yicha).${slotsWithNoStudents?`\n⚠️ ${slotsWithNoStudents} ta darsga mos Telegram ulangan o'quvchi topilmadi.`:''}`);
+}
 async function sendLessonReminder(slotId){
   const slot = DB.schedule.find(x=>x.id===slotId);
   if(!slot) return;
@@ -1424,7 +1466,9 @@ function renderScheduleAdmin(){
     </tr>`;}).join('');
   const teacherOpts = DB.teachers.map(t=>`<option value="${t.id}">${teacherName(t.id)}</option>`).join('');
   return `
-    <div class="topbar"><div><h1>Dars jadvali</h1><p>Barcha o'qituvchilar bo'yicha</p></div></div>
+    <div class="topbar"><div><h1>Dars jadvali</h1><p>Barcha o'qituvchilar bo'yicha</p></div>
+      <button class="btn gold" onclick="sendAllTodayReminders(null)">✈ Bugungi barcha darslar haqida hammaga yuborish</button>
+    </div>
     <div class="card">
       <div class="card-head"><h3>Yangi dars qo'shish</h3></div>
       <div class="form-row">
@@ -1493,7 +1537,9 @@ function renderMySchedule(u){
       <button class="btn gold sm" style="margin-top:10px;" onclick="addMySlot('${myTeacherId}')">+ Qo'shish</button>
     </div>` : '';
   return `
-    <div class="topbar"><div><h1>${isTeacher?'Mening jadvalim':'Dars jadvalim'}</h1></div></div>
+    <div class="topbar"><div><h1>${isTeacher?'Mening jadvalim':'Dars jadvalim'}</h1></div>
+      ${isTeacher ? `<button class="btn gold" onclick="sendAllTodayReminders('${myTeacherId}')">✈ Bugungi darslarim haqida hammaga yuborish</button>` : ''}
+    </div>
     ${addForm}
     <div class="card">
       <table>
