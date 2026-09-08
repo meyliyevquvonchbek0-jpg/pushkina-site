@@ -251,17 +251,20 @@
   .card-head h3{margin:0;}
 
   table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  .card:has(table){overflow-x:auto;}
   th{
     text-align:left;
     font-size:11.5px;
     text-transform:uppercase;
     letter-spacing:0.03em;
     color:var(--text-dim);
-    padding:8px 10px;
-    border-bottom:1px solid var(--border);
+    padding:10px 12px;
+    background:#F5F6FA;
+    border:1px solid var(--border);
+    white-space:nowrap;
   }
-  td{padding:10px 10px;border-bottom:1px solid var(--border);vertical-align:middle;}
-  tr:last-child td{border-bottom:none;}
+  td{padding:10px 12px;border:1px solid var(--border);vertical-align:middle;white-space:nowrap;}
+  tr:nth-child(even) td{background:#FBFCFE;}
   .pill{
     display:inline-block;
     padding:3px 10px;
@@ -1641,20 +1644,57 @@ function changeAttendanceMonth(delta){
   attendanceCalendarMonth = `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
   renderMain();
 }
+function pastNazoratTitlesForTeacher(teacherId){
+  const seen = new Map();
+  DB.dailyTotals.filter(dt=>dt.teacherId===teacherId && dt.title && dt.title.trim()).forEach(dt=>{
+    const key = dt.title.trim().toLowerCase();
+    if(!seen.has(key) || dt.date > seen.get(key).date) seen.set(key, dt);
+  });
+  return [...seen.values()].sort((a,b)=>a.title.localeCompare(b.title));
+}
+function getNazoratHistory(teacherId, title, studentId){
+  if(!title || !title.trim()) return {attempts:[], average:null};
+  const key = title.trim().toLowerCase();
+  const matchingDates = DB.dailyTotals.filter(dt=>dt.teacherId===teacherId && dt.title && dt.title.trim().toLowerCase()===key);
+  const attempts = [];
+  matchingDates.forEach(dt=>{
+    const rec = DB.attendance.find(a=>a.studentId===studentId && a.date===dt.date);
+    if(rec && rec.present && rec.tasksDone!=null && dt.totalTasks){
+      attempts.push({date:dt.date, tasksDone:rec.tasksDone, totalTasks:dt.totalTasks, percent:Math.round((rec.tasksDone/dt.totalTasks)*100)});
+    }
+  });
+  attempts.sort((a,b)=>a.date.localeCompare(b.date));
+  const average = attempts.length ? Math.round(attempts.reduce((sum,a)=>sum+a.percent,0)/attempts.length) : null;
+  return {attempts, average};
+}
+function onNazoratTitleSelect(teacherId){
+  const sel = document.getElementById('nazorat-past-select-'+teacherId);
+  if(!sel.value) return;
+  const [title, totalTasks] = sel.value.split('|||');
+  document.getElementById('nazorat-title-input-'+teacherId).value = title;
+  document.getElementById('total-tasks-input-'+teacherId).value = totalTasks;
+}
 function renderNazoratBlock(teacherId, isEditable, showLabel){
   const dailyTotalRec = DB.dailyTotals.find(dt=>dt.teacherId===teacherId && dt.date===selectedAttendanceDate);
   const totalTasks = dailyTotalRec ? dailyTotalRec.totalTasks : null;
   const nazoratTitle = dailyTotalRec ? (dailyTotalRec.title||'') : '';
+  const pastTitles = pastNazoratTitlesForTeacher(teacherId);
+  const pastSelect = pastTitles.length ? `
+    <select id="nazorat-past-select-${teacherId}" onchange="onNazoratTitleSelect('${teacherId}')" style="max-width:260px;" ${isEditable?'':'disabled'}>
+      <option value="">— avvalgi nazoratdan tanlash —</option>
+      ${pastTitles.map(dt=>`<option value="${dt.title.replace(/"/g,'&quot;')}|||${dt.totalTasks}">${dt.title} (${dt.totalTasks} savol)</option>`).join('')}
+    </select>` : '';
   return `
     <div class="card">
       <label>${showLabel ? showLabel+' — ' : ''}Bugungi kunlik nazorat (ixtiyoriy — xohlagan o'qituvchi to'ldiradi)</label>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+        ${pastSelect}
         <input type="text" id="nazorat-title-input-${teacherId}" placeholder="Nazorat nomi (masalan: 5-dars nazorati)" value="${nazoratTitle}" style="flex:1;min-width:200px;" ${isEditable?'':'disabled'}>
         <input type="number" id="total-tasks-input-${teacherId}" min="0" placeholder="Maks. savollar soni" value="${totalTasks!=null?totalTasks:''}" style="max-width:160px;" ${isEditable?'':'disabled'}>
         <button class="btn sm gold" onclick="saveDailyTotal('${teacherId}')" ${isEditable?'':'disabled'}>Saqlash</button>
         <button class="btn sm outline" onclick="exportDailyGradesCSV('${teacherId}')">📤 Kunlik jadvalni Excel'ga eksport</button>
       </div>
-      <div class="hint">Nazorat nomi va savollar sonini kiritish shart emas — faqat kunlik nazorat o'tkazgan kunlarda to'ldiring. Bo'sh qoldirilsa, bu kun uchun oddiy davomat va baho yetarli.</div>
+      <div class="hint">Nazorat nomi va savollar sonini kiritish shart emas — faqat kunlik nazorat o'tkazgan kunlarda to'ldiring. Bo'sh qoldirilsa, bu kun uchun oddiy davomat va baho yetarli. Avvalgi nazoratdan tanlab qayta o'tkazsangiz, o'quvchilarning o'sha nazorat bo'yicha o'rtacha natijasi pastdagi jadvalda avtomatik ko'rinadi.</div>
     </div>`;
 }
 function renderAttendance(u){
@@ -1760,6 +1800,8 @@ function renderAttendance(u){
       const ratingRec = DB.ratings.find(r=>r.studentId===s.id && r.date===selectedAttendanceDate);
       const tasksDone = (rec.present && rec.tasksDone!=null) ? rec.tasksDone : null;
       const percent = (rec.present && totalTasks && tasksDone!=null) ? Math.round((tasksDone/totalTasks)*100) : null;
+      const history = (rec.present && nazoratTitle) ? getNazoratHistory(studentTeacherId, nazoratTitle, s.id) : {attempts:[], average:null};
+      const avgCell = history.average!=null ? `<span class="pill ${history.average>=70?'green':history.average>=40?'gray':'rose'}">${history.average}%</span> <span style="font-size:11px;color:var(--text-dim);">(${history.attempts.length} marta)</span>` : '—';
       return `<tr>
         <td>${su?su.name:'—'}</td>
         <td><span class="pill ${rec.present?'green':'rose'}">${rec.present?'Keldi':'Kelmadi'}</span></td>
@@ -1767,6 +1809,7 @@ function renderAttendance(u){
         <td>${rec.present && totalTasks ? (nazoratTitle||'—') : '—'}</td>
         <td>${rec.present && totalTasks ? `${tasksDone!=null?tasksDone:0}/${totalTasks}` : '—'}</td>
         <td>${percent!=null ? `<span class="pill ${percent>=70?'green':percent>=40?'gray':'rose'}">${percent}%</span>` : '—'}</td>
+        <td>${avgCell}</td>
       </tr>`;
     })
     .filter(Boolean)
@@ -1775,8 +1818,8 @@ function renderAttendance(u){
     <div class="card">
       <div style="font-weight:600;margin-bottom:8px;">📊 Bugungi natijalar (faqat davomati belgilanganlar)</div>
       <table>
-        <thead><tr><th>Ism</th><th>Davomat</th><th>Baho (1-10)</th><th>Nazorat nomi</th><th>Bajargan/Jami</th><th>Foiz</th></tr></thead>
-        <tbody>${resultsRows || '<tr><td colspan="6" class="empty">Bu kunga hali hech kim belgilanmagan</td></tr>'}</tbody>
+        <thead><tr><th>Ism</th><th>Davomat</th><th>Baho (1-10)</th><th>Nazorat nomi</th><th>Bajargan/Jami</th><th>Bugungi foiz</th><th>O'rtacha (shu nazorat bo'yicha)</th></tr></thead>
+        <tbody>${resultsRows || '<tr><td colspan="7" class="empty">Bu kunga hali hech kim belgilanmagan</td></tr>'}</tbody>
       </table>
     </div>`;
   return `
@@ -1874,9 +1917,11 @@ function exportDailyGradesCSV(teacherId){
       const score = ratingRec ? `${ratingRec.score}/10` : '';
       const tasksDone = (rec.present && rec.tasksDone!=null) ? rec.tasksDone : '';
       const percent = (rec.present && totalTasks && tasksDone!=='') ? Math.round((tasksDone/totalTasks)*100)+'%' : '';
-      return [su?su.name:'—', present, score, nazoratTitle, tasksDone, totalTasks||'', percent];
+      const history = (rec.present && nazoratTitle) ? getNazoratHistory(teacherId, nazoratTitle, s.id) : {attempts:[], average:null};
+      const avgStr = history.average!=null ? `${history.average}% (${history.attempts.length} marta)` : '';
+      return [su?su.name:'—', present, score, nazoratTitle, tasksDone, totalTasks||'', percent, avgStr];
     });
-  exportTableToCSV(`kunlik-baholash-${date}.csv`, ['Ism familiya','Davomat','Baho (1-10)','Nazorat nomi','Bajargan','Jami','Foiz'], rows);
+  exportTableToCSV(`kunlik-baholash-${date}.csv`, ['Ism familiya','Davomat','Baho (1-10)','Nazorat nomi','Bajargan','Jami','Foiz',"O'rtacha (shu nazorat)"], rows);
 }
 function renderMyAttendance(u){
   const s = DB.students.find(x=>x.userId===u.id);
