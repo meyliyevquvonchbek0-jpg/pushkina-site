@@ -367,6 +367,7 @@
     .main{padding:18px 16px;}
   }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -477,6 +478,7 @@ const FIELD_MAP = {
   announcements: {authorId:'author_id'},
   ratings: {studentId:'student_id', teacherId:'teacher_id'},
   daily_totals: {teacherId:'teacher_id', totalTasks:'total_tasks', title:'title'},
+  nazorat_scores: {sessionId:'session_id', studentId:'student_id', tasksDone:'tasks_done'},
   settings: {telegramUrl:'telegram_url', instagramUrl:'instagram_url', aboutText:'about_text', telegramBotToken:'telegram_bot_token', adminTelegramChatId:'admin_telegram_chat_id'},
   tests: {teacherId:'teacher_id', timeLimitMinutes:'time_limit_minutes'},
   test_questions: {testId:'test_id', optionA:'option_a', optionB:'option_b', optionC:'option_c', optionD:'option_d', correctOption:'correct_option'},
@@ -485,7 +487,7 @@ const FIELD_MAP = {
   homework_status: {homeworkId:'homework_id', studentId:'student_id'},
   rewards: {costCoins:'cost_coins'},
   reward_requests: {studentId:'student_id', rewardId:'reward_id'},
-  reviews: {authorName:'author_name'}
+  reviews: {authorName:'author_name', authorUserId:'author_user_id'}
 };
 function toRow(table, obj){
   const map = FIELD_MAP[table] || {};
@@ -563,7 +565,8 @@ let DB = {
   rewards: [],
   rewardRequests: [],
   reviews: [],
-  dailyTotals: []
+  dailyTotals: [],
+  nazoratScores: []
 };
 let session = null; // {userId, role}
 let activeTab = 'home';
@@ -593,6 +596,7 @@ async function boot(){
     DB.rewardRequests = await fetchTable('reward_requests');
     DB.reviews = await fetchTable('reviews');
     DB.dailyTotals = await fetchTable('daily_totals');
+    DB.nazoratScores = await fetchTable('nazorat_scores');
     renderSocialFloat();
     renderLandingContent();
     try{
@@ -924,6 +928,7 @@ const NAV = {
     {id:'my-schedule', label:'Dars jadvalim', icon:'▦'},
     {id:'my-attendance', label:'Davomatim', icon:'✓'},
     {id:'my-ratings', label:'Baholarim', icon:'★'},
+    {id:'my-review', label:'Sharh qoldirish', icon:'💬'},
     {id:'videos', label:'Video darslar', icon:'▶'},
     {id:'materials', label:'Materiallar', icon:'▤'},
     {id:'homework', label:'Uy vazifalarim', icon:'📝'},
@@ -973,6 +978,7 @@ function renderMain(){
   else if(activeTab==='users') html = renderUsers();
   else if(activeTab==='settings') html = renderSettings();
   else if(activeTab==='my-ratings') html = renderMyRatings(u);
+  else if(activeTab==='my-review') html = renderMyReview(u);
   else if(activeTab==='teacher-info') html = renderTeacherInfo(u);
   else if(activeTab==='translator') html = renderTranslator();
   else if(activeTab==='live-class') html = renderLiveClass(u);
@@ -1644,6 +1650,21 @@ function changeAttendanceMonth(delta){
   attendanceCalendarMonth = `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
   renderMain();
 }
+let activeNazoratSession = {}; // {teacherId: sessionId | 'NEW'}
+function getActiveSessionForTeacherToday(teacherId){
+  const todays = DB.dailyTotals.filter(dt=>dt.teacherId===teacherId && dt.date===selectedAttendanceDate);
+  const explicit = activeNazoratSession[teacherId];
+  if(explicit === 'NEW') return null;
+  if(explicit){
+    const found = todays.find(dt=>dt.id===explicit);
+    if(found) return found;
+  }
+  return todays.length ? todays[todays.length-1] : null;
+}
+function onSessionSelectChange(teacherId, value){
+  activeNazoratSession[teacherId] = value;
+  renderMain();
+}
 function pastNazoratTitlesForTeacher(teacherId){
   const seen = new Map();
   DB.dailyTotals.filter(dt=>dt.teacherId===teacherId && dt.title && dt.title.trim()).forEach(dt=>{
@@ -1655,12 +1676,12 @@ function pastNazoratTitlesForTeacher(teacherId){
 function getNazoratHistory(teacherId, title, studentId){
   if(!title || !title.trim()) return {attempts:[], average:null};
   const key = title.trim().toLowerCase();
-  const matchingDates = DB.dailyTotals.filter(dt=>dt.teacherId===teacherId && dt.title && dt.title.trim().toLowerCase()===key);
+  const sessions = DB.dailyTotals.filter(dt=>dt.teacherId===teacherId && dt.title && dt.title.trim().toLowerCase()===key);
   const attempts = [];
-  matchingDates.forEach(dt=>{
-    const rec = DB.attendance.find(a=>a.studentId===studentId && a.date===dt.date);
-    if(rec && rec.present && rec.tasksDone!=null && dt.totalTasks){
-      attempts.push({date:dt.date, tasksDone:rec.tasksDone, totalTasks:dt.totalTasks, percent:Math.round((rec.tasksDone/dt.totalTasks)*100)});
+  sessions.forEach(sess=>{
+    const scoreRec = DB.nazoratScores.find(ns=>ns.sessionId===sess.id && ns.studentId===studentId);
+    if(scoreRec && scoreRec.tasksDone!=null && sess.totalTasks){
+      attempts.push({date:sess.date, tasksDone:scoreRec.tasksDone, totalTasks:sess.totalTasks, percent:Math.round((scoreRec.tasksDone/sess.totalTasks)*100)});
     }
   });
   attempts.sort((a,b)=>a.date.localeCompare(b.date));
@@ -1671,22 +1692,30 @@ function onNazoratTitleSelect(teacherId){
   const sel = document.getElementById('nazorat-past-select-'+teacherId);
   if(!sel.value) return;
   const [title, totalTasks] = sel.value.split('|||');
+  activeNazoratSession[teacherId] = 'NEW';
   document.getElementById('nazorat-title-input-'+teacherId).value = title;
   document.getElementById('total-tasks-input-'+teacherId).value = totalTasks;
 }
 function renderNazoratBlock(teacherId, isEditable, showLabel){
-  const dailyTotalRec = DB.dailyTotals.find(dt=>dt.teacherId===teacherId && dt.date===selectedAttendanceDate);
-  const totalTasks = dailyTotalRec ? dailyTotalRec.totalTasks : null;
-  const nazoratTitle = dailyTotalRec ? (dailyTotalRec.title||'') : '';
+  const todaysSessions = DB.dailyTotals.filter(dt=>dt.teacherId===teacherId && dt.date===selectedAttendanceDate);
+  const currentSession = getActiveSessionForTeacherToday(teacherId);
+  const totalTasks = currentSession ? currentSession.totalTasks : null;
+  const nazoratTitle = currentSession ? (currentSession.title||'') : '';
   const pastTitles = pastNazoratTitlesForTeacher(teacherId);
   const pastSelect = pastTitles.length ? `
     <select id="nazorat-past-select-${teacherId}" onchange="onNazoratTitleSelect('${teacherId}')" style="max-width:260px;" ${isEditable?'':'disabled'}>
       <option value="">— avvalgi nazoratdan tanlash —</option>
       ${pastTitles.map(dt=>`<option value="${dt.title.replace(/"/g,'&quot;')}|||${dt.totalTasks}">${dt.title} (${dt.totalTasks} savol)</option>`).join('')}
     </select>` : '';
+  const todaySelect = todaysSessions.length ? `
+    <select onchange="onSessionSelectChange('${teacherId}', this.value)" style="max-width:240px;" ${isEditable?'':'disabled'}>
+      ${todaysSessions.map(s=>`<option value="${s.id}" ${currentSession&&currentSession.id===s.id?'selected':''}>${s.title||'(nomsiz)'} — ${s.totalTasks} savol</option>`).join('')}
+      <option value="NEW" ${!currentSession?'selected':''}>➕ Bugungi yangi nazorat qo'shish</option>
+    </select>` : '';
   return `
     <div class="card">
-      <label>${showLabel ? showLabel+' — ' : ''}Bugungi kunlik nazorat (ixtiyoriy — xohlagan o'qituvchi to'ldiradi)</label>
+      <label>${showLabel ? showLabel+' — ' : ''}Bugungi kunlik nazorat (ixtiyoriy — bir kunda bir nechta bo'lishi mumkin)</label>
+      ${todaySelect ? `<div style="margin-bottom:8px;">${todaySelect}</div>` : ''}
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
         ${pastSelect}
         <input type="text" id="nazorat-title-input-${teacherId}" placeholder="Nazorat nomi (masalan: 5-dars nazorati)" value="${nazoratTitle}" style="flex:1;min-width:200px;" ${isEditable?'':'disabled'}>
@@ -1694,7 +1723,7 @@ function renderNazoratBlock(teacherId, isEditable, showLabel){
         <button class="btn sm gold" onclick="saveDailyTotal('${teacherId}')" ${isEditable?'':'disabled'}>Saqlash</button>
         <button class="btn sm outline" onclick="exportDailyGradesCSV('${teacherId}')">📤 Kunlik jadvalni Excel'ga eksport</button>
       </div>
-      <div class="hint">Nazorat nomi va savollar sonini kiritish shart emas — faqat kunlik nazorat o'tkazgan kunlarda to'ldiring. Bo'sh qoldirilsa, bu kun uchun oddiy davomat va baho yetarli. Avvalgi nazoratdan tanlab qayta o'tkazsangiz, o'quvchilarning o'sha nazorat bo'yicha o'rtacha natijasi pastdagi jadvalda avtomatik ko'rinadi.</div>
+      <div class="hint">Nazorat nomi va savollar sonini kiritish shart emas — faqat kunlik nazorat o'tkazgan kunlarda to'ldiring. Bir kunda bir nechta nazorat bo'lsa, "➕ Bugungi yangi nazorat qo'shish" ni tanlab, yangisini kiriting — eskisi bazada saqlanib qoladi. Avvalgi nazoratdan tanlab qayta o'tkazsangiz, o'quvchilarning o'sha nazorat bo'yicha o'rtacha natijasi pastdagi jadvalda avtomatik ko'rinadi.</div>
     </div>`;
 }
 function renderAttendance(u){
@@ -1756,21 +1785,22 @@ function renderAttendance(u){
     const su = DB.users.find(x=>x.id===s.userId);
     const rec = DB.attendance.find(a=>a.studentId===s.id && a.date===selectedAttendanceDate);
     const present = rec ? rec.present : null;
-    const tasksDone = rec ? rec.tasksDone : null;
     const studentTeacherId = s.teacherId || myTeacherId;
-    const dtRec = DB.dailyTotals.find(dt=>dt.teacherId===studentTeacherId && dt.date===selectedAttendanceDate);
+    const dtRec = getActiveSessionForTeacherToday(studentTeacherId);
     const totalTasks = dtRec ? dtRec.totalTasks : null;
     const nazoratTitle = dtRec ? (dtRec.title||'') : '';
+    const scoreRecTask = dtRec ? DB.nazoratScores.find(ns=>ns.sessionId===dtRec.id && ns.studentId===s.id) : null;
+    const tasksDone = scoreRecTask ? scoreRecTask.tasksDone : null;
     const percent = (totalTasks && tasksDone!=null) ? Math.round((tasksDone/totalTasks)*100) : null;
     const ratingRec = DB.ratings.find(r=>r.studentId===s.id && r.date===selectedAttendanceDate);
     const scoreButtons = (isEditable && present===true) ? `
       <div style="display:flex;gap:3px;margin-top:6px;flex-wrap:wrap;">
         ${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="btn sm ${ratingRec&&ratingRec.score===n?'gold':'outline'}" style="padding:4px 8px;" onclick="setRating('${s.id}','${studentTeacherId}',${n})">${n}</button>`).join('')}
       </div>` : (ratingRec ? `<div style="margin-top:6px;font-size:12px;color:var(--text-dim);">Baho: ${ratingRec.score}/10</div>` : '');
-    const tasksInput = (isEditable && present===true && totalTasks) ? `
+    const tasksInput = (isEditable && present===true && totalTasks && dtRec) ? `
       <div style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
         ${nazoratTitle ? `<span style="font-size:11.5px;color:var(--text-dim);">${nazoratTitle}:</span>` : ''}
-        <input type="number" min="0" max="${totalTasks}" value="${tasksDone!=null?tasksDone:''}" style="max-width:70px;" onchange="saveTasksDone('${s.id}', this.value, ${totalTasks})">
+        <input type="number" min="0" max="${totalTasks}" value="${tasksDone!=null?tasksDone:''}" style="max-width:70px;" onchange="saveNazoratScore('${dtRec.id}', '${s.id}', this.value, ${totalTasks})">
         <span style="font-size:12px;color:var(--text-dim);">/ ${totalTasks} bajardi</span>
         ${percent!=null ? `<span class="pill ${percent>=70?'green':percent>=40?'gray':'rose'}">${percent}%</span>` : ''}
       </div>` : (percent!=null ? `<div style="margin-top:6px;font-size:12px;color:var(--text-dim);">${nazoratTitle?nazoratTitle+' — ':''}${tasksDone}/${totalTasks} bajardi — <b>${percent}%</b></div>` : '');
@@ -1794,11 +1824,12 @@ function renderAttendance(u){
       const rec = DB.attendance.find(a=>a.studentId===s.id && a.date===selectedAttendanceDate);
       if(!rec) return null;
       const studentTeacherId = s.teacherId || myTeacherId;
-      const dtRec = DB.dailyTotals.find(dt=>dt.teacherId===studentTeacherId && dt.date===selectedAttendanceDate);
+      const dtRec = getActiveSessionForTeacherToday(studentTeacherId);
       const totalTasks = dtRec ? dtRec.totalTasks : null;
       const nazoratTitle = dtRec ? (dtRec.title||'') : '';
+      const scoreRecTask = (rec.present && dtRec) ? DB.nazoratScores.find(ns=>ns.sessionId===dtRec.id && ns.studentId===s.id) : null;
       const ratingRec = DB.ratings.find(r=>r.studentId===s.id && r.date===selectedAttendanceDate);
-      const tasksDone = (rec.present && rec.tasksDone!=null) ? rec.tasksDone : null;
+      const tasksDone = scoreRecTask ? scoreRecTask.tasksDone : null;
       const percent = (rec.present && totalTasks && tasksDone!=null) ? Math.round((tasksDone/totalTasks)*100) : null;
       const history = (rec.present && nazoratTitle) ? getNazoratHistory(studentTeacherId, nazoratTitle, s.id) : {attempts:[], average:null};
       const avgCell = history.average!=null ? `<span class="pill ${history.average>=70?'green':history.average>=40?'gray':'rose'}">${history.average}%</span> <span style="font-size:11px;color:var(--text-dim);">(${history.attempts.length} marta)</span>` : '—';
@@ -1877,29 +1908,33 @@ async function saveDailyTotal(teacherId){
   const totalTasks = Number(val)||0;
   const title = document.getElementById('nazorat-title-input-'+teacherId).value.trim();
   const date = selectedAttendanceDate;
-  let rec = DB.dailyTotals.find(dt=>dt.teacherId===teacherId && dt.date===date);
-  if(rec){
-    await updateRow('daily_totals', rec.id, {totalTasks, title});
-    rec.totalTasks = totalTasks;
-    rec.title = title;
+  const currentSession = getActiveSessionForTeacherToday(teacherId);
+  if(currentSession){
+    await updateRow('daily_totals', currentSession.id, {totalTasks, title});
+    currentSession.totalTasks = totalTasks;
+    currentSession.title = title;
   }else{
     const newRec = await insertRow('daily_totals', {teacherId, date, totalTasks, title});
     DB.dailyTotals.push(newRec);
+    activeNazoratSession[teacherId] = newRec.id;
   }
   renderMain();
 }
-async function saveTasksDone(studentId, value, totalTasks){
+async function saveNazoratScore(sessionId, studentId, value, totalTasks){
   const tasksDone = Math.min(Number(value)||0, totalTasks);
-  const date = selectedAttendanceDate;
-  let rec = DB.attendance.find(a=>a.studentId===studentId && a.date===date);
-  if(!rec) return;
-  await updateRow('attendance', rec.id, {tasksDone});
-  rec.tasksDone = tasksDone;
+  let rec = DB.nazoratScores.find(ns=>ns.sessionId===sessionId && ns.studentId===studentId);
+  if(rec){
+    await updateRow('nazorat_scores', rec.id, {tasksDone});
+    rec.tasksDone = tasksDone;
+  }else{
+    const newRec = await insertRow('nazorat_scores', {sessionId, studentId, tasksDone});
+    DB.nazoratScores.push(newRec);
+  }
   renderMain();
 }
 function exportDailyGradesCSV(teacherId){
   const date = selectedAttendanceDate;
-  const dailyTotalRec = DB.dailyTotals.find(dt=>dt.teacherId===teacherId && dt.date===date);
+  const dailyTotalRec = getActiveSessionForTeacherToday(teacherId);
   const totalTasks = dailyTotalRec ? dailyTotalRec.totalTasks : '';
   const nazoratTitle = dailyTotalRec ? (dailyTotalRec.title||'') : '';
   const pool = DB.students.filter(s=>s.teacherId===teacherId);
@@ -1915,7 +1950,8 @@ function exportDailyGradesCSV(teacherId){
       const present = rec.present ? 'Keldi' : 'Kelmadi';
       const ratingRec = DB.ratings.find(r=>r.studentId===s.id && r.date===date);
       const score = ratingRec ? `${ratingRec.score}/10` : '';
-      const tasksDone = (rec.present && rec.tasksDone!=null) ? rec.tasksDone : '';
+      const scoreRecTask = (rec.present && dailyTotalRec) ? DB.nazoratScores.find(ns=>ns.sessionId===dailyTotalRec.id && ns.studentId===s.id) : null;
+      const tasksDone = scoreRecTask ? scoreRecTask.tasksDone : '';
       const percent = (rec.present && totalTasks && tasksDone!=='') ? Math.round((tasksDone/totalTasks)*100)+'%' : '';
       const history = (rec.present && nazoratTitle) ? getNazoratHistory(teacherId, nazoratTitle, s.id) : {attempts:[], average:null};
       const avgStr = history.average!=null ? `${history.average}% (${history.attempts.length} marta)` : '';
@@ -2537,13 +2573,28 @@ async function doTranslate(){
 
 /* ============ CSV EXPORT HELPER ============ */
 function exportTableToCSV(filename, headers, rows){
-  let csv = headers.join(',') + '\n' + rows.map(r=>r.map(c=>'"'+String(c==null?'':c).replace(/"/g,'""')+'"').join(',')).join('\n');
-  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const xlsxName = filename.replace(/\.csv$/i, '.xlsx');
+  try{
+    const wsData = [headers, ...rows.map(r=>r.map(c=>c==null?'':c))];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = headers.map((h,i)=>{
+      let maxLen = String(h).length;
+      rows.forEach(r=>{ const v = r[i]==null?'':String(r[i]); if(v.length>maxLen) maxLen = v.length; });
+      return {wch: Math.min(Math.max(maxLen+2, 10), 40)};
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Jadval');
+    XLSX.writeFile(wb, xlsxName);
+  }catch(e){
+    console.error('xlsx export error, falling back to csv', e);
+    let csv = headers.join(',') + '\n' + rows.map(r=>r.map(c=>'"'+String(c==null?'':c).replace(/"/g,'""')+'"').join(',')).join('\n');
+    const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
 }
 function exportPaymentsCSV(){
   const rows = DB.students.map(s=>{
@@ -2563,26 +2614,35 @@ function exportSalariesCSV(){
   exportTableToCSV('oyliklar.csv', ['O\'qituvchi','Fan','Jami o\'quvchi','Bugun kelgan','Bu oy to\'lagan','Jami summa','Ulush'], rows);
 }
 function exportAttendanceCSV(){
-  const rows = DB.attendance.map(a=>{
+  const sessionsByTeacherDate = {};
+  DB.dailyTotals.filter(dt=>dt.title && dt.title.trim()).forEach(dt=>{
+    const key = dt.teacherId+'|'+dt.date;
+    if(!sessionsByTeacherDate[key]) sessionsByTeacherDate[key] = [];
+    sessionsByTeacherDate[key].push(dt);
+  });
+  const rowsOut = [];
+  DB.attendance.forEach(a=>{
     const s = DB.students.find(x=>x.id===a.studentId);
     const su = s ? DB.users.find(x=>x.id===s.userId) : null;
     const studentTeacherId = s ? s.teacherId : null;
     const tName = teacherName(studentTeacherId);
-    const dtRec = DB.dailyTotals.find(dt=>dt.teacherId===studentTeacherId && dt.date===a.date);
-    const totalTasks = dtRec ? dtRec.totalTasks : null;
-    const nazoratTitle = dtRec ? (dtRec.title||'') : '';
+    const group = s ? (s.group||'—') : '—';
     const ratingRec = DB.ratings.find(r=>r.studentId===a.studentId && r.date===a.date);
     const score = ratingRec ? `${ratingRec.score}/10` : '';
-    const tasksDone = (a.present && a.tasksDone!=null) ? a.tasksDone : '';
-    const percent = (a.present && totalTasks && tasksDone!=='') ? Math.round((tasksDone/totalTasks)*100)+'%' : '';
-    return {
-      teacherName: tName,
-      group: s ? (s.group||'—') : '—',
-      row: [tName, a.date, su?su.name:'—', s?(s.group||'—'):'—', a.present?'Keldi':'Kelmadi', score, nazoratTitle, tasksDone!=='' ? `${tasksDone}/${totalTasks}` : '', percent]
-    };
-  }).sort((a,b)=> a.teacherName.localeCompare(b.teacherName) || a.group.localeCompare(b.group) || b.row[1].localeCompare(a.row[1]))
-    .map(x=>x.row);
-  exportTableToCSV('davomat.csv', ["O'qituvchi",'Sana','Ism','Guruh','Holat','Baho (1-10)','Nazorat nomi','Bajargan/Jami','Foiz'], rows);
+    const sessions = sessionsByTeacherDate[studentTeacherId+'|'+a.date] || [];
+    if(!sessions.length){
+      rowsOut.push({teacherName:tName, group, date:a.date, row:[tName, a.date, su?su.name:'—', group, a.present?'Keldi':'Kelmadi', score, '', '', '']});
+    }else{
+      sessions.forEach(sess=>{
+        const scoreRec = a.present ? DB.nazoratScores.find(ns=>ns.sessionId===sess.id && ns.studentId===a.studentId) : null;
+        const tasksDone = scoreRec ? scoreRec.tasksDone : '';
+        const percent = (a.present && sess.totalTasks && tasksDone!=='') ? Math.round((tasksDone/sess.totalTasks)*100)+'%' : '';
+        rowsOut.push({teacherName:tName, group, date:a.date, row:[tName, a.date, su?su.name:'—', group, a.present?'Keldi':'Kelmadi', score, sess.title, tasksDone!==''?`${tasksDone}/${sess.totalTasks}`:'', percent]});
+      });
+    }
+  });
+  rowsOut.sort((x,y)=> x.teacherName.localeCompare(y.teacherName) || x.group.localeCompare(y.group) || y.date.localeCompare(x.date));
+  exportTableToCSV('davomat.csv', ["O'qituvchi",'Sana','Ism','Guruh','Holat','Baho (1-10)','Nazorat nomi','Bajargan/Jami','Foiz'], rowsOut.map(r=>r.row));
 }
 
 /* ============ HOMEWORK ============ */
@@ -2594,13 +2654,14 @@ function renderHomework(u){
       const st = DB.homeworkStatus.find(x=>x.homeworkId===h.id && x.studentId===s.id);
       const done = st ? st.done : false;
       const checked = st ? st.checked : false;
-      return `<div class="card">
+      const isOverdue = h.dueDate && h.dueDate < todayStr() && !done;
+      return `<div class="card" ${isOverdue?'style="border:1px solid var(--rose);"':''}>
         <h3>${h.title}</h3>
         <p style="color:var(--text-dim);font-size:13.5px;">${h.description||''}</p>
-        <p style="font-size:12px;color:var(--text-dim);">Muddat: ${h.dueDate||'—'}</p>
+        <p style="font-size:12px;${isOverdue?'color:var(--rose);font-weight:600;':'color:var(--text-dim);'}">Muddat: ${h.dueDate||'—'}${isOverdue?' — muddati o\'tgan!':''}</p>
         <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
           <button class="btn sm ${done?'gold':'outline'}" onclick="toggleHomeworkDone('${h.id}','${s.id}')">${done?'Bajarildi ✓':'Bajardim deb belgilash'}</button>
-          ${checked ? `<span class="pill green">O'qituvchi tekshirdi</span>` : (done ? `<span class="pill gray">Tekshirilmoqda</span>` : '')}
+          ${checked ? `<span class="pill green">O'qituvchi tekshirdi</span>` : (done ? `<span class="pill gray">Tekshirilmoqda</span>` : (isOverdue ? `<span class="pill rose">Muddati o'tgan</span>` : ''))}
         </div>
       </div>`;
     }).join('');
@@ -2614,17 +2675,19 @@ function renderHomework(u){
   list = list.slice().sort((a,b)=>b.date.localeCompare(a.date));
   const cards = list.map(h=>{
     const myStudents = DB.students.filter(s=>s.teacherId===h.teacherId);
+    const isOverdue = h.dueDate && h.dueDate < todayStr();
     const rows = myStudents.map(s=>{
       const su = DB.users.find(x=>x.id===s.userId);
       const st = DB.homeworkStatus.find(x=>x.homeworkId===h.id && x.studentId===s.id);
       const done = st ? st.done : false;
       const checked = st ? st.checked : false;
-      return `<tr><td>${su?su.name:'—'}</td><td><span class="pill ${done?'green':'gray'}">${done?'Bajardi':'Bajarmagan'}</span></td>
+      const studentOverdue = isOverdue && !done;
+      return `<tr><td>${su?su.name:'—'}</td><td><span class="pill ${done?'green':(studentOverdue?'rose':'gray')}">${done?'Bajardi':(studentOverdue?'Muddati o\'tgan':'Bajarmagan')}</span></td>
         <td>${done ? `<button class="btn sm ${checked?'gold':'outline'}" onclick="toggleHomeworkChecked('${h.id}','${s.id}')">${checked?'Tekshirildi ✓':'Tekshirish'}</button>` : '—'}</td></tr>`;
     }).join('');
-    return `<div class="card">
+    return `<div class="card" ${isOverdue?'style="border:1px solid var(--rose);"':''}>
       <div class="card-head"><h3>${h.title}</h3><button class="icon-btn rose" onclick="deleteHomework('${h.id}')">O'chirish</button></div>
-      <p style="color:var(--text-dim);font-size:13.5px;">${h.description||''} · Muddat: ${h.dueDate||'—'}</p>
+      <p style="color:var(--text-dim);font-size:13.5px;">${h.description||''} · Muddat: <span style="${isOverdue?'color:var(--rose);font-weight:600;':''}">${h.dueDate||'—'}${isOverdue?' — o\'tgan':''}</span></p>
       <table style="margin-top:10px;">
         <thead><tr><th>O'quvchi</th><th>Holat</th><th></th></tr></thead>
         <tbody>${rows || '<tr><td colspan="3" class="empty">O\'quvchi yo\'q</td></tr>'}</tbody>
@@ -3232,6 +3295,56 @@ async function deleteReview(id){
   DB.reviews = DB.reviews.filter(x=>x.id!==id);
   renderMain();
   renderLandingContent();
+}
+function renderMyReview(u){
+  const myReviews = DB.reviews.filter(r=>r.authorUserId===u.id).slice().sort((a,b)=>b.date.localeCompare(a.date));
+  const rows = myReviews.map(r=>`<tr>
+    <td>${r.date}</td>
+    <td>${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</td>
+    <td style="max-width:320px;">${r.text}</td>
+    <td><span class="pill ${r.approved?'green':'gray'}">${r.approved?'Chop etilgan':'Ko\'rib chiqilmoqda'}</span></td>
+  </tr>`).join('');
+  return `
+    <div class="topbar"><div><h1>Sharh qoldirish</h1><p>Sharhingiz administratsiya tomonidan tekshirilgach, bosh sahifada chop etiladi</p></div></div>
+    <div class="card">
+      <label>Baho (1-5)</label>
+      <div style="display:flex;gap:6px;margin-bottom:12px;">
+        ${[1,2,3,4,5].map(n=>`<button type="button" class="btn sm outline" id="my-rv-star-${n}" onclick="setMyReviewRating(${n})" style="padding:6px 12px;">${n}★</button>`).join('')}
+      </div>
+      <input type="hidden" id="my-rv-rating" value="5">
+      <label>Sharh matni</label>
+      <textarea id="my-rv-text" rows="3" placeholder="Akademiya Pushkina haqida fikringizni yozing..."></textarea>
+      <div class="err" id="my-rv-err"></div>
+      <button class="btn gold sm" style="margin-top:10px;" onclick="submitMyReview('${u.id}')">Yuborish</button>
+    </div>
+    ${myReviews.length ? `
+    <div class="card">
+      <h3>Mening sharhlarim</h3>
+      <table>
+        <thead><tr><th>Sana</th><th>Baho</th><th>Matn</th><th>Holat</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>` : ''}`;
+}
+function setMyReviewRating(n){
+  document.getElementById('my-rv-rating').value = n;
+  for(let i=1;i<=5;i++){
+    const btn = document.getElementById('my-rv-star-'+i);
+    if(btn) btn.className = 'btn sm '+(i<=n?'gold':'outline');
+  }
+}
+async function submitMyReview(userId){
+  const text = document.getElementById('my-rv-text').value.trim();
+  const rating = Number(document.getElementById('my-rv-rating').value)||5;
+  const err = document.getElementById('my-rv-err');
+  if(!text){ err.textContent = 'Sharh matnini kiriting.'; return; }
+  const u = DB.users.find(x=>x.id===userId);
+  const newRv = await insertRow('reviews', {authorName:u?u.name:'O\'quvchi', authorUserId:userId, text, rating, date:todayStr(), approved:false});
+  DB.reviews.push(newRv);
+  document.getElementById('my-rv-text').value = '';
+  setMyReviewRating(5);
+  renderMain();
+  alert('Rahmat! Sharhingiz yuborildi, administratsiya tasdiqlagach bosh sahifada ko\'rinadi.');
 }
 
 /* ============ USERS (admin — manage all accounts) ============ */
