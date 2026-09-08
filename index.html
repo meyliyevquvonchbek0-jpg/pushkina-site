@@ -333,19 +333,34 @@
   .day-tag.active{background:var(--ink);color:#fff;border-color:var(--ink);}
   @media(max-width:820px){
     #app.show{flex-direction:column;}
-    .sidebar{width:100%;flex-direction:row;overflow-x:auto;align-items:center;padding:12px;}
-    .sidebar .brand{border:none;margin:0;padding:0 10px 0 0;}
+    .sidebar{
+      width:100%;
+      flex-direction:row;flex-wrap:wrap;
+      align-items:center;
+      padding:10px 12px;
+      row-gap:8px;
+    }
+    .sidebar .brand{
+      order:1;flex:1 1 auto;min-width:0;
+      border:none;margin:0;padding:0;
+    }
     .nav-spacer{display:none;}
     .user-box{
-      display:flex;align-items:center;gap:6px;flex-shrink:0;
-      position:sticky;right:0;
-      background:var(--ink);
-      padding:6px 0 6px 10px;
-      margin-left:8px;
-      border-left:1px solid rgba(255,255,255,0.15);
+      order:2;flex:0 0 auto;
+      display:flex;align-items:center;gap:6px;
     }
     .user-box .name,.user-box .role{display:none;}
     .user-box button{width:auto!important;white-space:nowrap;padding:7px 10px;font-size:11.5px;margin-bottom:0!important;}
+    #nav-list{
+      order:3;flex:0 0 100%;
+      display:flex;gap:6px;overflow-x:auto;
+      padding-top:8px;margin-top:2px;
+      border-top:1px solid rgba(255,255,255,0.12);
+      -webkit-overflow-scrolling:touch;
+    }
+    #nav-list .nav-item{
+      flex-shrink:0;white-space:nowrap;margin-bottom:0;
+    }
     .main{padding:18px 16px;}
   }
 </style>
@@ -460,8 +475,6 @@ const FIELD_MAP = {
   ratings: {studentId:'student_id', teacherId:'teacher_id'},
   daily_totals: {teacherId:'teacher_id', totalTasks:'total_tasks', title:'title'},
   settings: {telegramUrl:'telegram_url', instagramUrl:'instagram_url', aboutText:'about_text', telegramBotToken:'telegram_bot_token', adminTelegramChatId:'admin_telegram_chat_id'},
-  payment_requests: {studentId:'student_id', screenshotUrl:'screenshot_url'},
-  payment_cards: {bankName:'bank_name', cardNumber:'card_number', cardHolder:'card_holder'},
   tests: {teacherId:'teacher_id', timeLimitMinutes:'time_limit_minutes'},
   test_questions: {testId:'test_id', optionA:'option_a', optionB:'option_b', optionC:'option_c', optionD:'option_d', correctOption:'correct_option'},
   test_attempts: {testId:'test_id', studentId:'student_id', startedAt:'started_at', submittedAt:'submitted_at'},
@@ -539,8 +552,6 @@ let DB = {
   announcements: [],// {id, title, text, date, authorId}
   ratings: [],      // {id, studentId, teacherId, date, score}
   settings: {telegramUrl:'', instagramUrl:'', aboutText:'', telegramBotToken:'', adminTelegramChatId:''},
-  paymentRequests: [], // {id, studentId, amount, screenshotUrl, date, status}
-  paymentCards: [], // {id, bankName, cardNumber, cardHolder}
   tests: [],
   testQuestions: [],
   testAttempts: [],
@@ -570,8 +581,6 @@ async function boot(){
     DB.ratings = await fetchTable('ratings');
     const settingsRows = await fetchTable('settings');
     if(settingsRows[0]) DB.settings = settingsRows[0];
-    DB.paymentRequests = await fetchTable('payment_requests');
-    DB.paymentCards = await fetchTable('payment_cards');
     DB.tests = await fetchTable('tests');
     DB.testQuestions = await fetchTable('test_questions');
     DB.testAttempts = await fetchTable('test_attempts');
@@ -593,7 +602,7 @@ async function boot(){
           document.getElementById('landing-screen').classList.add('hide');
           document.getElementById('login-screen').classList.remove('show');
           document.getElementById('app').classList.add('show');
-          activeTab = 'home';
+          activeTab = parsed.tab || 'home';
           renderNav();
           renderMain();
         }else{
@@ -856,6 +865,16 @@ function handleLogout(){
   document.getElementById('login-password').value='';
 }
 function curUser(){ return DB.users.find(u=>u.id===session.userId); }
+function persistTab(tab){
+  try{
+    const saved = localStorage.getItem('pushkina_session');
+    if(saved){
+      const parsed = JSON.parse(saved);
+      parsed.tab = tab;
+      localStorage.setItem('pushkina_session', JSON.stringify(parsed));
+    }
+  }catch(e){}
+}
 
 /* ============ NAV ============ */
 const NAV = {
@@ -876,7 +895,6 @@ const NAV = {
     {id:'reviews', label:'Sharhlar', icon:'💬'},
     {id:'salaries', label:'Oyliklar', icon:'₪'},
     {id:'telegram-reminders', label:'Telegram eslatmalar', icon:'✈'},
-    {id:'payment-requests', label:'To\'lov so\'rovlari', icon:'📩'},
     {id:'live-class', label:'Onlayn darslar', icon:'●'},
     {id:'requests', label:'So\'rovlar', icon:'✉'},
     {id:'users', label:'Foydalanuvchilar', icon:'●'},
@@ -888,6 +906,7 @@ const NAV = {
     {id:'my-schedule', label:'Mening jadvalim', icon:'▦'},
     {id:'my-students', label:'O\'quvchilarim', icon:'▤'},
     {id:'attendance', label:'Davomat belgilash', icon:'✓'},
+    {id:'payments', label:'To\'lovlar', icon:'₪'},
     {id:'other-groups', label:'Markaz guruhlari', icon:'▥'},
     {id:'videos', label:'Video darslar', icon:'▶'},
     {id:'materials', label:'Materiallarim', icon:'▤'},
@@ -902,7 +921,6 @@ const NAV = {
     {id:'my-schedule', label:'Dars jadvalim', icon:'▦'},
     {id:'my-attendance', label:'Davomatim', icon:'✓'},
     {id:'my-ratings', label:'Baholarim', icon:'★'},
-    {id:'my-payments', label:'To\'lovim', icon:'₪'},
     {id:'videos', label:'Video darslar', icon:'▶'},
     {id:'materials', label:'Materiallar', icon:'▤'},
     {id:'homework', label:'Uy vazifalarim', icon:'📝'},
@@ -922,7 +940,7 @@ function renderNav(){
     const div = document.createElement('div');
     div.className = 'nav-item' + (activeTab===item.id ? ' active' : '');
     div.innerHTML = `<span>${item.icon}</span><span>${item.label}</span>`;
-    div.onclick = ()=>{ activeTab = item.id; renderNav(); renderMain(); };
+    div.onclick = ()=>{ activeTab = item.id; persistTab(item.id); renderNav(); renderMain(); };
     list.appendChild(div);
   });
   document.getElementById('cur-user-name').textContent = u.name;
@@ -944,13 +962,11 @@ function renderMain(){
   else if(activeTab==='other-groups') html = renderOtherGroups(u);
   else if(activeTab==='attendance') html = renderAttendance(u);
   else if(activeTab==='my-attendance') html = renderMyAttendance(u);
-  else if(activeTab==='payments') html = renderPayments();
-  else if(activeTab==='my-payments') html = renderMyPayments(u);
+  else if(activeTab==='payments') html = renderPayments(u);
   else if(activeTab==='videos') html = renderVideos(u);
   else if(activeTab==='materials') html = renderMaterials(u);
   else if(activeTab==='salaries') html = renderSalaries();
   else if(activeTab==='telegram-reminders') html = renderTelegramReminders();
-  else if(activeTab==='payment-requests') html = renderPaymentRequests();
   else if(activeTab==='users') html = renderUsers();
   else if(activeTab==='settings') html = renderSettings();
   else if(activeTab==='my-ratings') html = renderMyRatings(u);
@@ -1015,7 +1031,6 @@ function renderHome(u){
     const today = todayStr();
     const presentToday = DB.attendance.filter(a=>a.date===today && a.present).length;
     const paidThisMonth = DB.payments.filter(p=>p.date && p.date.slice(0,7)===today.slice(0,7)).length;
-    const pendingReceipts = DB.paymentRequests.filter(r=>r.status==='pending').length;
     const pendingCount = DB.users.filter(u=>u.role==='student' && u.status==='pending').length;
     return `
       <div class="topbar"><div><h1>Bosh sahifa</h1><p>Akademiya Pushkina — umumiy holat</p></div></div>
@@ -1024,7 +1039,6 @@ function renderHome(u){
         <div class="metric"><div class="lbl">Jami o'qituvchilar</div><div class="val">${totalTeachers}</div></div>
         <div class="metric"><div class="lbl">Bugun kelganlar</div><div class="val green">${presentToday}</div></div>
         <div class="metric" style="${pendingCount>0?'cursor:pointer;':''}" ${pendingCount>0?`onclick="goto_('requests')"`:''}><div class="lbl">Kutayotgan so'rovlar</div><div class="val ${pendingCount>0?'rose':''}">${pendingCount}</div></div>
-        <div class="metric" style="${pendingReceipts>0?'cursor:pointer;':''}" ${pendingReceipts>0?`onclick="goto_('payment-requests')"`:''}><div class="lbl">Kutayotgan cheklar</div><div class="val ${pendingReceipts>0?'rose':''}">${pendingReceipts}</div></div>
       </div>
       <div class="card" style="margin-top:16px;">
         <h3>Tezkor havolalar</h3>
@@ -1062,7 +1076,7 @@ function renderHome(u){
     </div>
     ${renderAnnouncementsBlock(u)}`;
 }
-function goto_(tab){ activeTab = tab; renderNav(); renderMain(); }
+function goto_(tab){ activeTab = tab; persistTab(tab); renderNav(); renderMain(); }
 
 /* ============ TEACHERS (admin) ============ */
 function renderTeachers(){
@@ -1913,26 +1927,30 @@ function getPaymentStatus(studentId){
   const ok = last.paidUntil >= todayStr();
   return {ok, label: ok ? `${last.paidUntil} gacha to'langan` : `Muddati o'tgan (${last.paidUntil})`};
 }
-function renderPayments(){
-  const rows = DB.students.map(s=>{
+function renderPayments(u){
+  const isAdmin = u.role==='admin';
+  const myTeacherId = !isAdmin ? (DB.teachers.find(t=>t.userId===u.id)||{}).id : null;
+  const pool = isAdmin ? DB.students : DB.students.filter(s=>s.teacherId===myTeacherId);
+  const rows = pool.map(s=>{
     const su = DB.users.find(x=>x.id===s.userId);
     const pay = getPaymentStatus(s.id);
     return `<tr>
       <td>${su?su.name:'—'}</td>
       <td>${s.group||'—'}</td>
+      ${isAdmin?`<td>${teacherName(s.teacherId)}</td>`:''}
       <td><span class="pill ${pay.ok?'green':'rose'}">${pay.label}</span></td>
       <td><button class="btn sm outline" onclick="openPaymentModal('${s.id}', '${(su?su.name:'').replace(/'/g,"\\'")}')">To'lov qo'shish</button></td>
     </tr>`;
   }).join('');
   return `
     <div class="topbar">
-      <div><h1>To'lovlar</h1><p>Barcha o'quvchilar bo'yicha to'lov holati</p></div>
+      <div><h1>To'lovlar</h1><p>${isAdmin?"Barcha o'quvchilar bo'yicha to'lov holati":"O'zingizning o'quvchilaringiz bo'yicha to'lov holati"}</p></div>
       <button class="btn outline sm" onclick="exportPaymentsCSV()">📤 Excel'ga eksport</button>
     </div>
     <div class="card">
       <table>
-        <thead><tr><th>Ism</th><th>Guruh</th><th>Holat</th><th></th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="4" class="empty">O\'quvchi yo\'q</td></tr>'}</tbody>
+        <thead><tr><th>Ism</th><th>Guruh</th>${isAdmin?'<th>O\'qituvchi</th>':''}<th>Holat</th><th></th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="${isAdmin?5:4}" class="empty">O'quvchi yo'q</td></tr>`}</tbody>
       </table>
     </div>`;
 }
@@ -1988,187 +2006,6 @@ async function savePayment(studentId){
     return;
   }
   document.querySelector('.modal-bg').remove();
-  renderMain();
-}
-function renderMyPayments(u){
-  const s = DB.students.find(x=>x.userId===u.id);
-  const recs = DB.payments.filter(p=>p.studentId===(s?s.id:null)).slice().sort((a,b)=>b.date.localeCompare(a.date));
-  const rows = recs.map(r=>{
-    const half = Number(r.amount)/2;
-    return `<tr><td>${r.date}</td><td>${Number(r.amount).toLocaleString()} so'm</td><td>${r.paidUntil} gacha</td><td style="font-size:12px;color:var(--text-dim);">Markaz: ${half.toLocaleString()} · O'qituvchi: ${half.toLocaleString()}</td></tr>`;
-  }).join('');
-  const pay = getPaymentStatus(s?s.id:null);
-  const myRequests = DB.paymentRequests.filter(r=>r.studentId===(s?s.id:null)).slice().sort((a,b)=>b.date.localeCompare(a.date));
-  const reqRows = myRequests.map(r=>{
-    const label = r.status==='pending' ? 'Kutilmoqda' : r.status==='approved' ? 'Tasdiqlandi' : 'Rad etildi';
-    const pillClass = r.status==='pending' ? 'gray' : r.status==='approved' ? 'green' : 'rose';
-    return `<tr><td>${r.date}</td><td>${Number(r.amount).toLocaleString()} so'm</td><td><span class="pill ${pillClass}">${label}</span></td></tr>`;
-  }).join('');
-  return `
-    <div class="topbar">
-      <div><h1>To'lovim</h1><p><span class="pill ${pay.ok?'green':'rose'}">${pay.label}</span></p></div>
-      <button class="btn gold" onclick="openPaymentProofModal('${s?s.id:''}')">To'lov chekini yuborish</button>
-    </div>
-    ${DB.paymentCards.length ? `
-    <div class="card">
-      <h3>To'lov uchun kartalar</h3>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;">
-        ${DB.paymentCards.map(c=>`
-          <div class="bank-card">
-            <button class="bc-copy" onclick="copyCardNumber('${c.cardNumber}', this)">Nusxalash</button>
-            <div class="bc-bank">${c.bankName||'Karta'}</div>
-            <div class="bc-number">${c.cardNumber}</div>
-            <div class="bc-holder">${c.cardHolder||''}</div>
-          </div>`).join('')}
-      </div>
-    </div>` : ''}
-    <div class="card">
-      <h3>Tasdiqlangan to'lovlar</h3>
-      <table>
-        <thead><tr><th>Sana</th><th>Summa</th><th>Amal qilish muddati</th><th>Taqsimot</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="4" class="empty">To\'lov tarixi yo\'q</td></tr>'}</tbody>
-      </table>
-    </div>
-    <div class="card">
-      <h3>Yuborilgan cheklar</h3>
-      <table>
-        <thead><tr><th>Sana</th><th>Summa</th><th>Holat</th></tr></thead>
-        <tbody>${reqRows || '<tr><td colspan="3" class="empty">Hali chek yuborilmagan</td></tr>'}</tbody>
-      </table>
-    </div>`;
-}
-async function openPaymentProofModal(studentId){
-  const bg = document.createElement('div');
-  bg.className = 'modal-bg';
-  bg.innerHTML = `
-    <div class="modal">
-      <h3>To'lov chekini yuborish</h3>
-      <label>To'langan summa (so'm)</label><input type="number" id="pr-amount" min="0">
-      <label>Chek/screenshot rasmi</label><input type="file" id="pr-file" accept="image/*">
-      <div class="err" id="pr-err"></div>
-      <div class="modal-actions">
-        <button class="btn outline" onclick="this.closest('.modal-bg').remove()">Bekor qilish</button>
-        <button class="btn gold" id="pr-submit-btn" onclick="submitPaymentProof('${studentId}')">Yuborish</button>
-      </div>
-      <div class="hint">Chek administratorga yuboriladi. Tasdiqlangach, to'lov holatingiz yangilanadi.</div>
-    </div>`;
-  document.body.appendChild(bg);
-}
-function copyCardNumber(number, btn){
-  const clean = number.replace(/\s/g,'');
-  const showCopied = ()=>{
-    const old = btn.textContent;
-    btn.textContent = 'Nusxalandi ✓';
-    setTimeout(()=>{ btn.textContent = old; }, 1500);
-  };
-  const fallbackCopy = ()=>{
-    try{
-      const ta = document.createElement('textarea');
-      ta.value = clean;
-      ta.style.position = 'fixed';
-      ta.style.left = '-9999px';
-      ta.style.top = '0';
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      const ok = document.execCommand('copy');
-      document.body.removeChild(ta);
-      if(ok) showCopied();
-      else alert('Nusxalab bo\'lmadi. Qo\'lda yozib oling: ' + clean);
-    }catch(e){
-      alert('Nusxalab bo\'lmadi. Qo\'lda yozib oling: ' + clean);
-    }
-  };
-  if(navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext){
-    navigator.clipboard.writeText(clean).then(showCopied).catch(fallbackCopy);
-  }else{
-    fallbackCopy();
-  }
-}
-async function submitPaymentProof(studentId){
-  const amount = document.getElementById('pr-amount').value;
-  const file = document.getElementById('pr-file').files[0];
-  const err = document.getElementById('pr-err');
-  const btn = document.getElementById('pr-submit-btn');
-  if(!amount || !file){ err.textContent = 'Summa va rasmni tanlang.'; return; }
-  btn.disabled = true; btn.textContent = 'Yuklanmoqda...';
-  try{
-    const ext = file.name.split('.').pop();
-    const path = `${studentId}-${Date.now()}.${ext}`;
-    const {error: upErr} = await sb.storage.from('receipts').upload(path, file);
-    if(upErr) throw upErr;
-    const {data: urlData} = sb.storage.from('receipts').getPublicUrl(path);
-    const newReq = await insertRow('payment_requests', {studentId, amount:Number(amount), screenshotUrl:urlData.publicUrl, date:todayStr(), status:'pending'});
-    DB.paymentRequests.push(newReq);
-  }catch(e){
-    err.textContent = 'Xatolik yuz berdi. Qayta urinib ko\'ring.';
-    console.error(e);
-    btn.disabled = false; btn.textContent = 'Yuborish';
-    return;
-  }
-  document.querySelector('.modal-bg').remove();
-  alert('Chek yuborildi. Administrator tasdiqlashini kuting.');
-  renderMain();
-}
-
-/* ============ ADMIN: PAYMENT REQUESTS (screenshot review) ============ */
-function renderPaymentRequests(){
-  const pending = DB.paymentRequests.filter(r=>r.status==='pending').slice().sort((a,b)=>a.date.localeCompare(b.date));
-  const cards = pending.map(r=>{
-    const s = DB.students.find(x=>x.id===r.studentId);
-    const su = s ? DB.users.find(x=>x.id===s.userId) : null;
-    return `
-      <div class="card">
-        <div style="display:flex;gap:16px;flex-wrap:wrap;">
-          <div>
-            <img src="${r.screenshotUrl}" style="width:160px;height:160px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer;display:block;" onclick="window.open('${r.screenshotUrl}','_blank')" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
-            <div style="display:none;width:160px;height:160px;align-items:center;justify-content:center;text-align:center;background:#F1F3F6;border-radius:8px;border:1px solid var(--border);padding:10px;font-size:12px;color:var(--text-dim);">Rasm yuklanmadi.<br><a href="${r.screenshotUrl}" target="_blank" rel="noopener" style="color:var(--gold-dark);">Havolani ochish</a></div>
-          </div>
-          <div style="flex:1;min-width:180px;">
-            <div style="font-weight:600;margin-bottom:4px;">${su?su.name:'—'}</div>
-            <div style="color:var(--text-dim);font-size:13px;margin-bottom:10px;">${r.date} · O'quvchi ko'rsatgan summa: <b>${Number(r.amount).toLocaleString()} so'm</b></div>
-            <label>Qaysi sanagacha amal qiladi</label>
-            <input type="date" id="pr-until-${r.id}" style="max-width:200px;">
-            <div style="margin-top:10px;display:flex;gap:8px;">
-              <button class="btn sm gold" id="pr-approve-${r.id}" onclick="approvePaymentRequest('${r.id}')">Tasdiqlash</button>
-              <button class="btn sm danger" onclick="rejectPaymentRequest('${r.id}')">Rad etish</button>
-            </div>
-          </div>
-        </div>
-      </div>`;
-  }).join('');
-  return `
-    <div class="topbar"><div><h1>To'lov so'rovlari</h1><p>O'quvchilar yuborgan cheklar</p></div></div>
-    ${cards || '<div class="card"><div class="empty">Kutayotgan chek yo\'q</div></div>'}`;
-}
-async function approvePaymentRequest(reqId){
-  const btn = document.getElementById(`pr-approve-${reqId}`);
-  if(btn && btn.disabled) return;
-  const r = DB.paymentRequests.find(x=>x.id===reqId);
-  if(!r) return;
-  const paidUntil = document.getElementById(`pr-until-${reqId}`).value;
-  if(!paidUntil){ alert('Amal qilish sanasini tanlang.'); return; }
-  if(btn){ btn.disabled = true; btn.textContent = 'Saqlanmoqda...'; }
-  const prevStatus = getPaymentStatus(r.studentId);
-  const newPay = await insertRow('payments', {studentId:r.studentId, amount:r.amount, date:r.date, paidUntil});
-  DB.payments.push(newPay);
-  if(prevStatus.ok || DB.payments.filter(p=>p.studentId===r.studentId).length===1){
-    const s = DB.students.find(x=>x.id===r.studentId);
-    if(s){
-      const newCoins = (s.coins||0) + 20;
-      await updateRow('students', s.id, {coins:newCoins});
-      s.coins = newCoins;
-    }
-  }
-  await updateRow('payment_requests', reqId, {status:'approved'});
-  r.status = 'approved';
-  renderMain();
-}
-async function rejectPaymentRequest(reqId){
-  if(!confirm('Bu chekni rad etmoqchimisiz?')) return;
-  await updateRow('payment_requests', reqId, {status:'rejected'});
-  const r = DB.paymentRequests.find(x=>x.id===reqId);
-  if(r) r.status = 'rejected';
   renderMain();
 }
 
@@ -2481,14 +2318,8 @@ async function sendAllReminders(){
 
 /* ============ SETTINGS (admin — social links) ============ */
 function renderSettings(){
-  const cardRows = DB.paymentCards.map(c=>`<tr>
-    <td>${c.bankName||'—'}</td>
-    <td style="font-family:'Courier New',monospace;">${c.cardNumber}</td>
-    <td>${c.cardHolder||'—'}</td>
-    <td><button class="icon-btn rose" onclick="deletePaymentCard('${c.id}')">O'chirish</button></td>
-  </tr>`).join('');
   return `
-    <div class="topbar"><div><h1>Sozlamalar</h1><p>Bosh sahifa matni, ijtimoiy tarmoq havolalari va to'lov kartalari</p></div></div>
+    <div class="topbar"><div><h1>Sozlamalar</h1><p>Bosh sahifa matni, ijtimoiy tarmoq havolalari va bot sozlamalari</p></div></div>
     <div class="card">
       <h3>Bosh sahifa (barchaga ochiq)</h3>
       <label>"Biz haqimizda" matni</label>
@@ -2510,38 +2341,7 @@ function renderSettings(){
       <label>Admin Telegram Chat ID (yangi so'rovlar haqida xabar olish uchun)</label><input type="text" id="set-admin-chat" value="${DB.settings.adminTelegramChatId||''}" placeholder="masalan: 7507648227">
       <div class="err" id="set-bot-err"></div>
       <button class="btn gold sm" style="margin-top:10px;" onclick="saveBotToken()">Saqlash</button>
-    </div>
-    <div class="card">
-      <h3>To'lov kartalari</h3>
-      <p style="font-size:13px;color:var(--text-dim);margin:-6px 0 14px;">Bu yerda qo'shilgan kartalar o'quvchilarga "To'lovim" bo'limida ko'rinadi. Karta o'zgarganda, eskisini o'chirib, yangisini qo'shing.</p>
-      <table style="margin-bottom:16px;">
-        <thead><tr><th>Bank</th><th>Karta raqami</th><th>Egasi</th><th></th></tr></thead>
-        <tbody>${cardRows || '<tr><td colspan="4" class="empty">Karta qo\'shilmagan</td></tr>'}</tbody>
-      </table>
-      <div class="form-row">
-        <div><label>Bank nomi</label><input type="text" id="card-bank" placeholder="Uzcard / Humo"></div>
-        <div><label>Karta raqami</label><input type="text" id="card-number" placeholder="8600 0000 0000 0000"></div>
-        <div><label>Karta egasi</label><input type="text" id="card-holder" placeholder="ISM FAMILIYA"></div>
-      </div>
-      <div class="err" id="card-err"></div>
-      <button class="btn gold sm" style="margin-top:10px;" onclick="addPaymentCard()">+ Karta qo'shish</button>
     </div>`;
-}
-async function addPaymentCard(){
-  const bankName = document.getElementById('card-bank').value.trim();
-  const cardNumber = document.getElementById('card-number').value.trim();
-  const cardHolder = document.getElementById('card-holder').value.trim();
-  const err = document.getElementById('card-err');
-  if(!cardNumber){ err.textContent = 'Karta raqamini kiriting.'; return; }
-  const newCard = await insertRow('payment_cards', {bankName, cardNumber, cardHolder});
-  DB.paymentCards.push(newCard);
-  renderMain();
-}
-async function deletePaymentCard(id){
-  if(!confirm('Bu kartani o\'chirmoqchimisiz?')) return;
-  await deleteRow('payment_cards', id);
-  DB.paymentCards = DB.paymentCards.filter(x=>x.id!==id);
-  renderMain();
 }
 async function saveAboutText(){
   const aboutText = document.getElementById('set-about').value.trim();
