@@ -366,10 +366,28 @@
     }
     .main{padding:18px 16px;}
   }
+  .update-banner{
+    position:fixed;top:0;left:0;right:0;z-index:9999;
+    background:var(--gold);color:var(--ink);
+    padding:10px 16px;
+    display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;
+    font-size:13.5px;font-weight:600;
+    box-shadow:0 2px 10px rgba(0,0,0,0.18);
+  }
+  .update-banner button{
+    background:var(--ink);color:#fff;border:none;padding:6px 14px;border-radius:6px;
+    font-size:12.5px;font-weight:600;cursor:pointer;
+  }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
+<div id="boot-loader" style="position:fixed;inset:0;background:#F1F3F6;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:16px;">
+  <img src="icon-192.png" alt="Akademiya Pushkina" style="width:64px;height:64px;border-radius:16px;">
+  <div style="width:36px;height:36px;border:3px solid rgba(27,37,64,0.15);border-top-color:#1B2540;border-radius:50%;animation:boot-spin 0.8s linear infinite;"></div>
+  <div style="font-size:13.5px;color:#6b7280;">Yuklanmoqda...</div>
+</div>
+<style>@keyframes boot-spin{to{transform:rotate(360deg);}}</style>
 
 <div id="landing-screen">
   <div class="landing-nav">
@@ -575,30 +593,32 @@ const DAYS = ['Dush','Sesh','Chor','Pay','Jum','Shan','Yak'];
 /* ============ BOOTSTRAP ============ */
 async function boot(){
   try{
-    DB.users = await fetchTable('users');
-    DB.teachers = await fetchTable('teachers');
-    DB.students = await fetchTable('students');
-    DB.schedule = await fetchTable('schedule');
-    DB.attendance = await fetchTable('attendance');
-    DB.payments = await fetchTable('payments');
-    DB.videos = await fetchTable('videos');
-    DB.materials = await fetchTable('materials');
-    DB.announcements = await fetchTable('announcements');
-    DB.ratings = await fetchTable('ratings');
-    const settingsRows = await fetchTable('settings');
+    const [
+      users, teachers, students, schedule, attendance, payments, videos,
+      materials, announcements, ratings, settingsRows, tests, testQuestions,
+      testAttempts, homework, homeworkStatus, rewards, rewardRequests,
+      reviews, dailyTotals, nazoratScores
+    ] = await Promise.all([
+      fetchTable('users'), fetchTable('teachers'), fetchTable('students'),
+      fetchTable('schedule'), fetchTable('attendance'), fetchTable('payments'),
+      fetchTable('videos'), fetchTable('materials'), fetchTable('announcements'),
+      fetchTable('ratings'), fetchTable('settings'), fetchTable('tests'),
+      fetchTable('test_questions'), fetchTable('test_attempts'), fetchTable('homework'),
+      fetchTable('homework_status'), fetchTable('rewards'), fetchTable('reward_requests'),
+      fetchTable('reviews'), fetchTable('daily_totals'), fetchTable('nazorat_scores')
+    ]);
+    DB.users = users; DB.teachers = teachers; DB.students = students;
+    DB.schedule = schedule; DB.attendance = attendance; DB.payments = payments;
+    DB.videos = videos; DB.materials = materials; DB.announcements = announcements;
+    DB.ratings = ratings;
     if(settingsRows[0]) DB.settings = settingsRows[0];
-    DB.tests = await fetchTable('tests');
-    DB.testQuestions = await fetchTable('test_questions');
-    DB.testAttempts = await fetchTable('test_attempts');
-    DB.homework = await fetchTable('homework');
-    DB.homeworkStatus = await fetchTable('homework_status');
-    DB.rewards = await fetchTable('rewards');
-    DB.rewardRequests = await fetchTable('reward_requests');
-    DB.reviews = await fetchTable('reviews');
-    DB.dailyTotals = await fetchTable('daily_totals');
-    DB.nazoratScores = await fetchTable('nazorat_scores');
+    DB.tests = tests; DB.testQuestions = testQuestions; DB.testAttempts = testAttempts;
+    DB.homework = homework; DB.homeworkStatus = homeworkStatus; DB.rewards = rewards;
+    DB.rewardRequests = rewardRequests; DB.reviews = reviews; DB.dailyTotals = dailyTotals;
+    DB.nazoratScores = nazoratScores;
     renderSocialFloat();
     renderLandingContent();
+    const bootLoader = document.getElementById('boot-loader');
     try{
       const saved = localStorage.getItem('pushkina_session');
       if(saved){
@@ -617,14 +637,47 @@ async function boot(){
         }
       }
     }catch(e){ console.error('session restore error', e); }
+    if(bootLoader) bootLoader.remove();
   }catch(e){
     document.getElementById('landing-about').textContent = 'Serverga ulanib bo\'lmadi. Internetni tekshiring.';
+    const bootLoader = document.getElementById('boot-loader');
+    if(bootLoader) bootLoader.remove();
     console.error(e);
   }
   document.getElementById('login-username').addEventListener('keydown', e=>{ if(e.key==='Enter') handleLogin(); });
   document.getElementById('login-password').addEventListener('keydown', e=>{ if(e.key==='Enter') handleLogin(); });
 }
 boot();
+
+/* ============ AUTO-UPDATE DETECTION (Uzum Market uslubida) ============ */
+let APP_VERSION = null;
+let updateBannerShown = false;
+async function checkForUpdate(){
+  try{
+    const res = await fetch('version.json?t=' + Date.now(), {cache:'no-store'});
+    if(!res.ok) return;
+    const data = await res.json();
+    if(APP_VERSION === null){ APP_VERSION = data.v; return; }
+    if(data.v !== APP_VERSION) showUpdateBanner();
+  }catch(e){ /* internet yo'q yoki fayl topilmadi — e'tiborsiz qoldiramiz */ }
+}
+function showUpdateBanner(){
+  if(updateBannerShown) return;
+  updateBannerShown = true;
+  const bar = document.createElement('div');
+  bar.className = 'update-banner';
+  let seconds = 8;
+  bar.innerHTML = `<span>🔄 Saytda yangilanish mavjud — <span id="update-countdown">${seconds}</span> soniyadan keyin avtomatik yangilanadi</span><button onclick="location.reload()">Hozir yangilash</button>`;
+  document.body.appendChild(bar);
+  const timer = setInterval(()=>{
+    seconds--;
+    const el = document.getElementById('update-countdown');
+    if(el) el.textContent = seconds;
+    if(seconds<=0){ clearInterval(timer); location.reload(); }
+  }, 1000);
+}
+checkForUpdate();
+setInterval(checkForUpdate, 45000);
 
 /* ============ SELF-REGISTRATION (student requests) ============ */
 function openRegisterModal(){
@@ -1707,9 +1760,16 @@ function renderNazoratBlock(teacherId, isEditable, showLabel){
       <option value="">— avvalgi nazoratdan tanlash —</option>
       ${pastTitles.map(dt=>`<option value="${dt.title.replace(/"/g,'&quot;')}|||${dt.totalTasks}">${dt.title} (${dt.totalTasks} savol)</option>`).join('')}
     </select>` : '';
+  const titleCounts = {};
   const todaySelect = todaysSessions.length ? `
-    <select onchange="onSessionSelectChange('${teacherId}', this.value)" style="max-width:240px;" ${isEditable?'':'disabled'}>
-      ${todaysSessions.map(s=>`<option value="${s.id}" ${currentSession&&currentSession.id===s.id?'selected':''}>${s.title||'(nomsiz)'} — ${s.totalTasks} savol</option>`).join('')}
+    <select onchange="onSessionSelectChange('${teacherId}', this.value)" style="max-width:280px;" ${isEditable?'':'disabled'}>
+      ${todaysSessions.map(s=>{
+        const key = (s.title||'(nomsiz)').trim().toLowerCase();
+        titleCounts[key] = (titleCounts[key]||0)+1;
+        const dupCount = todaysSessions.filter(x=>(x.title||'(nomsiz)').trim().toLowerCase()===key).length;
+        const label = dupCount>1 ? `${s.title||'(nomsiz)'} — ${s.totalTasks} savol (${titleCounts[key]}-marta bugun)` : `${s.title||'(nomsiz)'} — ${s.totalTasks} savol`;
+        return `<option value="${s.id}" ${currentSession&&currentSession.id===s.id?'selected':''}>${label}</option>`;
+      }).join('')}
       <option value="NEW" ${!currentSession?'selected':''}>➕ Bugungi yangi nazorat qo'shish</option>
     </select>` : '';
   return `
@@ -1873,6 +1933,8 @@ async function markAttendance(studentId, present){
   const date = selectedAttendanceDate;
   if(date > todayStr()) return;
   let rec = DB.attendance.find(a=>a.studentId===studentId && a.date===date);
+  const prevPresent = rec ? rec.present : null;
+  if(prevPresent === present) return; // holat o'zgarmagan — qayta coin berilmasin
   if(rec){
     await updateRow('attendance', rec.id, {present});
     rec.present = present;
@@ -1880,13 +1942,16 @@ async function markAttendance(studentId, present){
     const newRec = await insertRow('attendance', {studentId, date, present});
     DB.attendance.push(newRec);
   }
-  if(present){
-    const s = DB.students.find(x=>x.id===studentId);
-    if(s){
-      const newCoins = (s.coins||0) + 5;
-      await updateRow('students', s.id, {coins:newCoins});
-      s.coins = newCoins;
-    }
+  const s = DB.students.find(x=>x.id===studentId);
+  if(s){
+    let delta = 0;
+    if(prevPresent===true) delta -= 1;      // avvalgi "Keldi" mukofoti bekor qilinadi
+    else if(prevPresent===false) delta += 5; // avvalgi "Kelmadi" jarimasi bekor qilinadi
+    if(present===true) delta += 1;
+    else if(present===false) delta -= 5;
+    const newCoins = Math.max(0, (s.coins||0) + delta);
+    await updateRow('students', s.id, {coins:newCoins});
+    s.coins = newCoins;
   }
   renderMain();
 }
@@ -1894,12 +1959,20 @@ async function setRating(studentId, teacherId, score){
   const date = selectedAttendanceDate;
   if(date > todayStr()) return;
   let rec = DB.ratings.find(r=>r.studentId===studentId && r.date===date);
+  const prevScore = rec ? rec.score : 0;
   if(rec){
     await updateRow('ratings', rec.id, {score});
     rec.score = score;
   }else{
     const newRec = await insertRow('ratings', {studentId, teacherId, date, score});
     DB.ratings.push(newRec);
+  }
+  const s = DB.students.find(x=>x.id===studentId);
+  if(s){
+    const delta = score - prevScore; // baho = coin (masalan 8 baho = 8 coin)
+    const newCoins = Math.max(0, (s.coins||0) + delta);
+    await updateRow('students', s.id, {coins:newCoins});
+    s.coins = newCoins;
   }
   renderMain();
 }
@@ -1923,12 +1996,22 @@ async function saveDailyTotal(teacherId){
 async function saveNazoratScore(sessionId, studentId, value, totalTasks){
   const tasksDone = Math.min(Number(value)||0, totalTasks);
   let rec = DB.nazoratScores.find(ns=>ns.sessionId===sessionId && ns.studentId===studentId);
+  const prevTasksDone = rec ? rec.tasksDone : null;
+  const prevCoin = (prevTasksDone!=null && totalTasks) ? Math.round((prevTasksDone/totalTasks)*10) : 0;
+  const newCoin = totalTasks ? Math.round((tasksDone/totalTasks)*10) : 0;
   if(rec){
     await updateRow('nazorat_scores', rec.id, {tasksDone});
     rec.tasksDone = tasksDone;
   }else{
     const newRec = await insertRow('nazorat_scores', {sessionId, studentId, tasksDone});
     DB.nazoratScores.push(newRec);
+  }
+  const s = DB.students.find(x=>x.id===studentId);
+  if(s){
+    const delta = newCoin - prevCoin; // foiz/10 = coin (masalan 70% = 7 coin)
+    const newCoins = Math.max(0, (s.coins||0) + delta);
+    await updateRow('students', s.id, {coins:newCoins});
+    s.coins = newCoins;
   }
   renderMain();
 }
@@ -2076,7 +2159,7 @@ async function savePayment(studentId){
     if(prevStatus.ok || DB.payments.filter(p=>p.studentId===studentId).length===1){
       const s = DB.students.find(x=>x.id===studentId);
       if(s){
-        const newCoins = (s.coins||0) + 20;
+        const newCoins = (s.coins||0) + 10;
         await updateRow('students', s.id, {coins:newCoins});
         s.coins = newCoins;
       }
