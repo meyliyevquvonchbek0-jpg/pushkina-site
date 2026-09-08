@@ -529,6 +529,11 @@ async function fetchTable(table){
   if(error){ console.error('fetch', table, error); return []; }
   return data.map(r=>fromRow(table, r));
 }
+async function verifyLogin(username, password){
+  const {data, error} = await sb.rpc('verify_login', {p_username: username, p_password: password});
+  if(error){ console.error('verify_login', error); return null; }
+  return (data && data[0]) ? data[0] : null;
+}
 async function insertRow(table, obj){
   const {data, error} = await sb.from(table).insert(toRow(table, obj)).select().single();
   if(error){ throw error; }
@@ -599,7 +604,7 @@ async function boot(){
       testAttempts, homework, homeworkStatus, rewards, rewardRequests,
       reviews, dailyTotals, nazoratScores
     ] = await Promise.all([
-      fetchTable('users'), fetchTable('teachers'), fetchTable('students'),
+      fetchTable('users_public'), fetchTable('teachers'), fetchTable('students'),
       fetchTable('schedule'), fetchTable('attendance'), fetchTable('payments'),
       fetchTable('videos'), fetchTable('materials'), fetchTable('announcements'),
       fetchTable('ratings'), fetchTable('settings'), fetchTable('tests'),
@@ -821,7 +826,8 @@ async function saveProfile(){
   const err = document.getElementById('cp-err');
   const patch = {name, username};
   if(oldPass || newPass || newPass2){
-    if(oldPass !== u.password){ err.textContent = 'Joriy parol noto\'g\'ri.'; return; }
+    const check = await verifyLogin(u.username, oldPass);
+    if(!check){ err.textContent = 'Joriy parol noto\'g\'ri.'; return; }
     if(!newPass || newPass.length < 4){ err.textContent = 'Yangi parol kamida 4 belgidan iborat bo\'lsin.'; return; }
     if(newPass !== newPass2){ err.textContent = 'Yangi parollar mos kelmadi.'; return; }
     patch.password = newPass;
@@ -893,21 +899,22 @@ function renderLandingContent(){
 }
 
 /* ============ AUTH ============ */
-function handleLogin(){
+async function handleLogin(){
   const u = document.getElementById('login-username').value.trim();
   const p = document.getElementById('login-password').value;
-  const user = DB.users.find(x=>x.username===u && x.password===p);
   const errBox = document.getElementById('login-err');
-  if(!user){
+  if(!u || !p){ errBox.textContent = 'Login va parolni kiriting.'; return; }
+  const result = await verifyLogin(u, p);
+  if(!result){
     errBox.textContent = 'Login yoki parol noto\'g\'ri.';
     return;
   }
-  if(user.status === 'pending'){
+  if(result.status === 'pending'){
     errBox.textContent = 'So\'rovingiz hali administrator tomonidan tasdiqlanmagan.';
     return;
   }
   errBox.textContent = '';
-  session = {userId:user.id, role:user.role};
+  session = {userId:result.id, role:result.role};
   try{ localStorage.setItem('pushkina_session', JSON.stringify(session)); }catch(e){}
   document.getElementById('landing-screen').classList.add('hide');
   document.getElementById('login-screen').classList.remove('show');
