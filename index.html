@@ -1741,6 +1741,66 @@ function getNazoratHistory(teacherId, title, studentId){
   const average = attempts.length ? Math.round(attempts.reduce((sum,a)=>sum+a.percent,0)/attempts.length) : null;
   return {attempts, average};
 }
+function showNazoratHistoryModal(attempts, studentName, title){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  const rows = attempts.map((a,i)=>`<tr>
+    <td>${i+1}</td><td>${a.date}</td><td>${a.tasksDone}/${a.totalTasks}</td>
+    <td><span class="pill ${a.percent>=70?'green':a.percent>=40?'gray':'rose'}">${a.percent}%</span></td>
+  </tr>`).join('');
+  const avg = attempts.length ? Math.round(attempts.reduce((s,a)=>s+a.percent,0)/attempts.length) : 0;
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>${studentName} — "${title}" tarixi</h3>
+      <table style="margin-top:10px;">
+        <thead><tr><th>#</th><th>Sana</th><th>Bajargan/Jami</th><th>Foiz</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" class="empty">Ma\'lumot yo\'q</td></tr>'}</tbody>
+      </table>
+      <div style="margin-top:12px;font-weight:600;">Umumiy o'rtacha: ${avg}% (${attempts.length} marta)</div>
+      <div class="modal-actions" style="margin-top:14px;">
+        <button class="btn gold" onclick="this.closest('.modal-bg').remove()">Yopish</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+}
+function exportAllNazoratReport(teacherId){
+  const sessions = DB.dailyTotals.filter(dt=>dt.teacherId===teacherId && dt.title && dt.title.trim());
+  if(!sessions.length){ alert('Bu o\'qituvchida hali nazorat kiritilmagan.'); return; }
+  const pool = DB.students.filter(s=>s.teacherId===teacherId);
+  const rows = [];
+  // Sarlavhalar bo'yicha guruhlab, sana bo'yicha saralaymiz
+  const byTitle = {};
+  sessions.forEach(sess=>{
+    const key = sess.title.trim();
+    if(!byTitle[key]) byTitle[key] = [];
+    byTitle[key].push(sess);
+  });
+  Object.keys(byTitle).sort().forEach(title=>{
+    const titleSessions = byTitle[title].slice().sort((a,b)=>a.date.localeCompare(b.date));
+    titleSessions.forEach(sess=>{
+      pool.forEach(s=>{
+        const su = DB.users.find(x=>x.id===s.userId);
+        const scoreRec = DB.nazoratScores.find(ns=>ns.sessionId===sess.id && ns.studentId===s.id);
+        if(!scoreRec) return; // bu o'quvchi bu urinishda qatnashmagan
+        const percent = sess.totalTasks ? Math.round((scoreRec.tasksDone/sess.totalTasks)*100) : '';
+        rows.push([title, sess.date, su?su.name:'—', `${scoreRec.tasksDone}/${sess.totalTasks}`, percent!==''?percent+'%':'']);
+      });
+    });
+  });
+  // Har bir (nazorat nomi + o'quvchi) uchun umumiy o'rtacha qatorlarini ham qo'shamiz
+  const summaryRows = [];
+  Object.keys(byTitle).sort().forEach(title=>{
+    pool.forEach(s=>{
+      const su = DB.users.find(x=>x.id===s.userId);
+      const history = getNazoratHistory(teacherId, title, s.id);
+      if(history.attempts.length){
+        summaryRows.push([title, su?su.name:'—', history.attempts.length, history.average+'%']);
+      }
+    });
+  });
+  exportTableToCSV('barcha-nazoratlar-tarixi.csv', ['Nazorat nomi','Sana','Ism','Bajargan/Jami','Foiz'], rows);
+  exportTableToCSV('nazoratlar-ortacha.csv', ['Nazorat nomi','Ism','Necha marta','Ortacha foiz'], summaryRows);
+}
 function onNazoratTitleSelect(teacherId){
   const sel = document.getElementById('nazorat-past-select-'+teacherId);
   if(!sel.value) return;
@@ -1782,6 +1842,7 @@ function renderNazoratBlock(teacherId, isEditable, showLabel){
         <input type="number" id="total-tasks-input-${teacherId}" min="0" placeholder="Maks. savollar soni" value="${totalTasks!=null?totalTasks:''}" style="max-width:160px;" ${isEditable?'':'disabled'}>
         <button class="btn sm gold" onclick="saveDailyTotal('${teacherId}')" ${isEditable?'':'disabled'}>Saqlash</button>
         <button class="btn sm outline" onclick="exportDailyGradesCSV('${teacherId}')">📤 Kunlik jadvalni Excel'ga eksport</button>
+        <button class="btn sm outline" onclick="exportAllNazoratReport('${teacherId}')">📊 Barcha nazoratlar hisoboti</button>
       </div>
       <div class="hint">Nazorat nomi va savollar sonini kiritish shart emas — faqat kunlik nazorat o'tkazgan kunlarda to'ldiring. Bir kunda bir nechta nazorat bo'lsa, "➕ Bugungi yangi nazorat qo'shish" ni tanlab, yangisini kiriting — eskisi bazada saqlanib qoladi. Avvalgi nazoratdan tanlab qayta o'tkazsangiz, o'quvchilarning o'sha nazorat bo'yicha o'rtacha natijasi pastdagi jadvalda avtomatik ko'rinadi.</div>
     </div>`;
@@ -1892,7 +1953,7 @@ function renderAttendance(u){
       const tasksDone = scoreRecTask ? scoreRecTask.tasksDone : null;
       const percent = (rec.present && totalTasks && tasksDone!=null) ? Math.round((tasksDone/totalTasks)*100) : null;
       const history = (rec.present && nazoratTitle) ? getNazoratHistory(studentTeacherId, nazoratTitle, s.id) : {attempts:[], average:null};
-      const avgCell = history.average!=null ? `<span class="pill ${history.average>=70?'green':history.average>=40?'gray':'rose'}">${history.average}%</span> <span style="font-size:11px;color:var(--text-dim);">(${history.attempts.length} marta)</span>` : '—';
+      const avgCell = history.average!=null ? `<span class="pill ${history.average>=70?'green':history.average>=40?'gray':'rose'}">${history.average}%</span> <span style="font-size:11px;color:var(--text-dim);">(${history.attempts.length} marta)</span> <button class="icon-btn" style="margin-left:4px;" onclick='showNazoratHistoryModal(${JSON.stringify(history.attempts)}, ${JSON.stringify(su?su.name:'—')}, ${JSON.stringify(nazoratTitle)})'>🕘</button>` : '—';
       return `<tr>
         <td>${su?su.name:'—'}</td>
         <td><span class="pill ${rec.present?'green':'rose'}">${rec.present?'Keldi':'Kelmadi'}</span></td>
