@@ -876,7 +876,7 @@ function renderLandingContent(){
     teacherSection.style.display = '';
     teachersEl.innerHTML = DB.teachers.map(t=>{
       const u = DB.users.find(x=>x.id===t.userId);
-      return `<div class="course-card"><div class="cc-tag">${t.subject||'O\'qituvchi'}</div><h3>${u?u.name:'—'}</h3><p>${t.experience||0} yillik tajriba</p></div>`;
+      return `<div class="course-card"><div class="cc-tag">${t.subject||'O\'qituvchi'}</div><h3>${genderAvatar(t.gender)} ${u?u.name:'—'}</h3><p>${t.experience||0} yillik tajriba</p></div>`;
     }).join('');
   }else{
     teacherSection.style.display = 'none';
@@ -1152,7 +1152,7 @@ function renderTeachers(){
   const rows = DB.teachers.map(t=>{
     const u = DB.users.find(x=>x.id===t.userId) || {name:'—', username:''};
     return `<tr>
-      <td>${u.name}</td>
+      <td style="display:flex;align-items:center;gap:8px;">${genderAvatar(t.gender)} ${u.name}</td>
       <td>${t.subject}</td>
       <td>${t.experience} yil</td>
       <td>${t.phone||'—'}</td>
@@ -1184,6 +1184,11 @@ function openTeacherModal(editId){
     <div class="modal">
       <h3>${t ? 'O\'qituvchini tahrirlash' : 'Yangi o\'qituvchi'}</h3>
       <label>To'liq ism</label><input type="text" id="t-name" value="${u?u.name.replace(/"/g,'&quot;'):''}" ${t?'disabled style="opacity:.6;"':''}>
+      <label>Jinsi</label>
+      <select id="t-gender">
+        <option value="male" ${(!t || t.gender==='male' || !t.gender)?'selected':''}>O'g'il bola</option>
+        <option value="female" ${t&&t.gender==='female'?'selected':''}>Qiz bola</option>
+      </select>
       <label>Qaysi tildan dars beradi</label><input type="text" id="t-subject" placeholder="masalan: Rus tili" value="${t?t.subject||'':''}">
       <label>Tajriba (yil)</label><input type="number" id="t-exp" value="${t?t.experience||0:0}" min="0">
       <label>Shu paytgacha nechta o'quvchi o'qitgan</label><input type="number" id="t-taught" value="${t?t.totalStudentsTaught||0:0}" min="0">
@@ -1203,6 +1208,7 @@ function openTeacherModal(editId){
   document.body.appendChild(bg);
 }
 async function saveTeacher(editId){
+  const gender = document.getElementById('t-gender').value;
   const subject = document.getElementById('t-subject').value.trim();
   const exp = document.getElementById('t-exp').value;
   const totalStudentsTaught = document.getElementById('t-taught').value;
@@ -1213,7 +1219,7 @@ async function saveTeacher(editId){
   const highlightUrl = document.getElementById('t-highlight').value.trim();
   const err = document.getElementById('t-err');
   if(!subject){ err.textContent = 'Fan nomini kiriting.'; return; }
-  const commonFields = {subject, experience:Number(exp)||0, totalStudentsTaught:Number(totalStudentsTaught)||0, certificateLevel, education, phone, certificateUrl, highlightUrl};
+  const commonFields = {gender, subject, experience:Number(exp)||0, totalStudentsTaught:Number(totalStudentsTaught)||0, certificateLevel, education, phone, certificateUrl, highlightUrl};
   if(editId){
     try{
       await updateRow('teachers', editId, commonFields);
@@ -1276,7 +1282,7 @@ function renderTeacherInfo(){
       </div>` : '';
     return `
       <div class="card">
-        <h3>${u?u.name:'—'}</h3>
+        <h3>${genderAvatar(t.gender)} ${u?u.name:'—'}</h3>
         <p style="color:var(--text-dim);font-size:13.5px;margin:0 0 10px;">${t.subject||''} tili o'qituvchisi${t.education?' · '+t.education:''}</p>
         <div class="grid cols-3" style="margin-bottom:14px;">
           <div class="metric"><div class="lbl">Tajriba</div><div class="val">${t.experience||0} yil</div></div>
@@ -1463,6 +1469,19 @@ function teacherName(teacherId){
   if(!t) return '—';
   const u = DB.users.find(x=>x.id===t.userId);
   return u ? u.name : '—';
+}
+function genderAvatar(gender){
+  const isFemale = gender==='female';
+  const bg = isFemale ? '#FCE4EC' : '#E3F2FD';
+  const fg = isFemale ? '#D6336C' : '#1971C2';
+  const bow = isFemale ? '<path d="M9 4.5l-2-1.2v2.4L9 4.5zM15 4.5l2-1.2v2.4L15 4.5z" fill="' + fg + '"/>' : '';
+  return `<span style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:${bg};flex-shrink:0;">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      ${bow}
+      <circle cx="12" cy="8" r="4" fill="${fg}"/>
+      <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" fill="${fg}"/>
+    </svg>
+  </span>`;
 }
 function dayLabel(day){
   if(day==='Toq') return 'Toq kunlar (Dush, Chor, Jum)';
