@@ -1195,8 +1195,14 @@ function openTeacherModal(editId){
       <label>Sertifikat/toifa darajasi</label><input type="text" id="t-cert-level" placeholder="masalan: Oliy toifali o'qituvchi" value="${t?t.certificateLevel||'':''}">
       <label>Qayerni tugatgan (ta'lim)</label><input type="text" id="t-education" placeholder="masalan: SamDCHTI, filologiya" value="${t?t.education||'':''}">
       <label>Telefon</label><input type="text" id="t-phone" placeholder="+998..." value="${t?t.phone||'':''}">
-      <label>Sertifikat rasmi (havola)</label><input type="text" id="t-cert" placeholder="https://drive.google.com/..." value="${t?t.certificateUrl||'':''}">
-      <label>Darslardan lavha (video havolasi)</label><input type="text" id="t-highlight" placeholder="https://youtube.com/..." value="${t?t.highlightUrl||'':''}">
+      <label>Sertifikat rasmi</label>
+      <input type="file" id="t-cert-file" accept="image/*" onchange="handleFileInputUpload(this,'t-cert','images','certificates','t-cert-preview')">
+      <input type="hidden" id="t-cert" value="${t?t.certificateUrl||'':''}">
+      <div id="t-cert-preview" style="font-size:12px;color:var(--text-dim);margin:-6px 0 10px;">${t&&t.certificateUrl?'✅ Avval yuklangan rasm bor':''}</div>
+      <label>Darslardan lavha (video)</label>
+      <input type="file" id="t-highlight-file" accept="video/*" onchange="handleFileInputUpload(this,'t-highlight','videos','highlights','t-highlight-preview')">
+      <input type="hidden" id="t-highlight" value="${t?t.highlightUrl||'':''}">
+      <div id="t-highlight-preview" style="font-size:12px;color:var(--text-dim);margin:-6px 0 10px;">${t&&t.highlightUrl?'✅ Avval yuklangan video bor':''}</div>
       ${!t ? `<label>Login</label><input type="text" id="t-username">
       <label>Parol</label><input type="text" id="t-password">` : ''}
       <div class="err" id="t-err"></div>
@@ -1482,6 +1488,29 @@ function genderAvatar(gender){
       <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" fill="${fg}"/>
     </svg>
   </span>`;
+}
+async function uploadFile(file, bucket, folder){
+  const ext = file.name.split('.').pop();
+  const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const {error} = await sb.storage.from(bucket).upload(path, file);
+  if(error){ throw error; }
+  const {data} = sb.storage.from(bucket).getPublicUrl(path);
+  return data.publicUrl;
+}
+async function handleFileInputUpload(inputEl, hiddenId, bucket, folder, previewId){
+  const file = inputEl.files[0];
+  if(!file) return;
+  const hidden = document.getElementById(hiddenId);
+  const preview = document.getElementById(previewId);
+  if(preview) preview.textContent = 'Yuklanmoqda...';
+  try{
+    const url = await uploadFile(file, bucket, folder);
+    hidden.value = url;
+    if(preview) preview.textContent = '✅ Yuklandi: ' + file.name;
+  }catch(e){
+    if(preview) preview.textContent = '❌ Xatolik yuz berdi.';
+    console.error(e);
+  }
 }
 function dayLabel(day){
   if(day==='Toq') return 'Toq kunlar (Dush, Chor, Jum)';
