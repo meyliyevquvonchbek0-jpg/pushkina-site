@@ -535,11 +535,24 @@ async function verifyLogin(username, password){
   return (data && data[0]) ? data[0] : null;
 }
 async function insertRow(table, obj){
+  if(table === 'users'){
+    const id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now()+'-'+Math.random().toString(36).slice(2));
+    const row = toRow(table, {...obj, id});
+    const {error} = await sb.from(table).insert(row);
+    if(error){ throw error; }
+    return fromRow(table, row);
+  }
   const {data, error} = await sb.from(table).insert(toRow(table, obj)).select().single();
   if(error){ throw error; }
   return fromRow(table, data);
 }
 async function updateRow(table, id, obj){
+  if(table === 'users'){
+    const row = toRow(table, obj);
+    const {error} = await sb.from(table).update(row).eq('id', id);
+    if(error){ throw error; }
+    return fromRow(table, {id, ...row});
+  }
   const {data, error} = await sb.from(table).update(toRow(table, obj)).eq('id', id).select().single();
   if(error){ throw error; }
   return fromRow(table, data);
@@ -1461,7 +1474,14 @@ async function deleteStudent(id){
   const s = DB.students.find(x=>x.id===id);
   if(!s) return;
   if(!confirm('Bu o\'quvchini o\'chirmoqchimisiz?')) return;
-  await deleteRow('users', s.userId);
+  try{
+    await deleteRow('students', id);
+    await deleteRow('users', s.userId);
+  }catch(e){
+    alert('O\'chirishda xatolik yuz berdi. Qayta urinib ko\'ring.');
+    console.error(e);
+    return;
+  }
   DB.students = DB.students.filter(x=>x.id!==id);
   DB.users = DB.users.filter(x=>x.id!==s.userId);
   DB.attendance = DB.attendance.filter(x=>x.studentId!==id);
@@ -1902,6 +1922,11 @@ function renderNazoratBlock(teacherId, isEditable, showLabel){
       <div class="hint">Nazorat nomi va savollar sonini kiritish shart emas — faqat kunlik nazorat o'tkazgan kunlarda to'ldiring. Bir kunda bir nechta nazorat bo'lsa, "➕ Bugungi yangi nazorat qo'shish" ni tanlab, yangisini kiriting — eskisi bazada saqlanib qoladi. Avvalgi nazoratdan tanlab qayta o'tkazsangiz, o'quvchilarning o'sha nazorat bo'yicha o'rtacha natijasi pastdagi jadvalda avtomatik ko'rinadi.</div>
     </div>`;
 }
+let attendanceGroupFilter = null;
+function setAttendanceGroupFilter(slotId){
+  attendanceGroupFilter = slotId || null;
+  renderMain();
+}
 function renderAttendance(u){
   if(!selectedAttendanceDate) selectedAttendanceDate = todayStr();
   if(!attendanceCalendarMonth) attendanceCalendarMonth = todayStr().slice(0,7);
@@ -1913,6 +1938,20 @@ function renderAttendance(u){
     const t = DB.teachers.find(x=>x.userId===u.id);
     myTeacherId = t ? t.id : null;
     pool = DB.students.filter(s=>s.teacherId===myTeacherId);
+  }
+  const relevantSlots = (u.role==='teacher')
+    ? DB.schedule.filter(sl=>sl.teacherId===myTeacherId)
+    : DB.schedule.slice();
+  const groupChips = relevantSlots.length ? `
+    <div class="card" style="margin-bottom:0;">
+      <div style="font-size:12.5px;color:var(--text-dim);margin-bottom:8px;">Guruh bo'yicha filtrlash</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn sm ${!attendanceGroupFilter?'gold':'outline'}" onclick="setAttendanceGroupFilter(null)">Barchasi</button>
+        ${relevantSlots.map(sl=>`<button class="btn sm ${attendanceGroupFilter===sl.id?'gold':'outline'}" onclick="setAttendanceGroupFilter('${sl.id}')">🕒 ${sl.time} — ${sl.subject}${u.role!=='teacher'?' ('+teacherName(sl.teacherId)+')':''}</button>`).join('')}
+      </div>
+    </div>` : '';
+  if(attendanceGroupFilter){
+    pool = pool.filter(s=>s.scheduleSlotId===attendanceGroupFilter);
   }
   const cells = buildCalendarGrid(attendanceCalendarMonth);
   const [cy,cm] = attendanceCalendarMonth.split('-');
@@ -2034,6 +2073,7 @@ function renderAttendance(u){
       <div><h1>Davomat</h1><p>Tanlangan sana: ${selectedAttendanceDate}${isEditable?' — belgilash mumkin':''}</p></div>
       ${u.role==='admin' ? `<button class="btn outline sm" onclick="exportAttendanceCSV()">📤 Excel'ga eksport</button>` : ''}
     </div>
+    ${groupChips}
     ${totalTasksBlock}
     ${calendarHtml}
     <div class="card">
