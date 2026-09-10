@@ -534,13 +534,12 @@ async function verifyLogin(username, password){
   if(error){ console.error('verify_login', error); return null; }
   return (data && data[0]) ? data[0] : null;
 }
+const USERS_SAFE_COLS = 'id,username,role,name,phone,status';
 async function insertRow(table, obj){
   if(table === 'users'){
-    const id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now()+'-'+Math.random().toString(36).slice(2));
-    const row = toRow(table, {...obj, id});
-    const {error} = await sb.from(table).insert(row);
+    const {data, error} = await sb.from(table).insert(toRow(table, obj)).select(USERS_SAFE_COLS).single();
     if(error){ throw error; }
-    return fromRow(table, row);
+    return fromRow(table, data);
   }
   const {data, error} = await sb.from(table).insert(toRow(table, obj)).select().single();
   if(error){ throw error; }
@@ -548,10 +547,9 @@ async function insertRow(table, obj){
 }
 async function updateRow(table, id, obj){
   if(table === 'users'){
-    const row = toRow(table, obj);
-    const {error} = await sb.from(table).update(row).eq('id', id);
+    const {data, error} = await sb.from(table).update(toRow(table, obj)).eq('id', id).select(USERS_SAFE_COLS).single();
     if(error){ throw error; }
-    return fromRow(table, {id, ...row});
+    return fromRow(table, data);
   }
   const {data, error} = await sb.from(table).update(toRow(table, obj)).eq('id', id).select().single();
   if(error){ throw error; }
