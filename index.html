@@ -634,8 +634,8 @@ async function boot(){
     DB.homework = homework; DB.homeworkStatus = homeworkStatus; DB.rewards = rewards;
     DB.rewardRequests = rewardRequests; DB.reviews = reviews; DB.dailyTotals = dailyTotals;
     DB.nazoratScores = nazoratScores;
-    renderSocialFloat();
-    renderLandingContent();
+    try{ renderSocialFloat(); }catch(e){ console.error('renderSocialFloat error', e); }
+    try{ renderLandingContent(); }catch(e){ console.error('renderLandingContent error', e); }
     const bootLoader = document.getElementById('boot-loader');
     try{
       const saved = localStorage.getItem('pushkina_session');
@@ -750,19 +750,33 @@ async function submitRegistration(){
     sendTelegramMessage(DB.settings.adminTelegramChatId, `📩 Yangi ro'yxatdan o'tish so'rovi!\nIsm: ${name}\nO'qituvchi: ${teacherName(teacherId)}\nLogin: ${username}\n\nSaytda "So'rovlar" bo'limida tasdiqlang.`);
   }
 }
-async function approveRequest(userId){
-  await updateRow('users', userId, {status:'active'});
-  const u = DB.users.find(x=>x.id===userId);
-  if(u) u.status = 'active';
-  renderMain();
+async function approveRequest(userId, btn){
+  if(btn){ btn.disabled = true; btn.textContent = 'Tasdiqlanmoqda...'; }
+  try{
+    await updateRow('users', userId, {status:'active'});
+    const u = DB.users.find(x=>x.id===userId);
+    if(u) u.status = 'active';
+    renderMain();
+  }catch(e){
+    console.error(e);
+    if(btn){ btn.disabled = false; btn.textContent = 'Tasdiqlash'; }
+    alert('Xatolik yuz berdi. Qayta urinib ko\'ring.');
+  }
 }
-async function rejectRequest(userId){
+async function rejectRequest(userId, btn){
   if(!confirm('Bu so\'rovni rad etmoqchimisiz? Foydalanuvchi butunlay o\'chiriladi.')) return;
-  const s = DB.students.find(x=>x.userId===userId);
-  await deleteRow('users', userId);
-  DB.users = DB.users.filter(x=>x.id!==userId);
-  if(s) DB.students = DB.students.filter(x=>x.id!==s.id);
-  renderMain();
+  if(btn){ btn.disabled = true; btn.textContent = 'Bajarilmoqda...'; }
+  try{
+    const s = DB.students.find(x=>x.userId===userId);
+    await deleteRow('users', userId);
+    DB.users = DB.users.filter(x=>x.id!==userId);
+    if(s) DB.students = DB.students.filter(x=>x.id!==s.id);
+    renderMain();
+  }catch(e){
+    console.error(e);
+    if(btn){ btn.disabled = false; btn.textContent = 'Rad etish'; }
+    alert('Xatolik yuz berdi. Qayta urinib ko\'ring.');
+  }
 }
 function renderRequests(){
   const pending = DB.users.filter(u=>u.role==='student' && u.status==='pending');
@@ -773,8 +787,8 @@ function renderRequests(){
       <td>${s ? teacherName(s.teacherId) : '—'}</td>
       <td>${u.username}</td>
       <td>
-        <button class="btn sm gold" onclick="approveRequest('${u.id}')">Tasdiqlash</button>
-        <button class="btn sm danger" onclick="rejectRequest('${u.id}')">Rad etish</button>
+        <button class="btn sm gold" onclick="approveRequest('${u.id}', this)">Tasdiqlash</button>
+        <button class="btn sm danger" onclick="rejectRequest('${u.id}', this)">Rad etish</button>
       </td>
     </tr>`;
   }).join('');
@@ -900,12 +914,15 @@ function renderLandingContent(){
   const approved = DB.reviews.filter(r=>r.approved);
   if(approved.length){
     reviewsSection.style.display = '';
-    reviewsEl.innerHTML = approved.map(r=>`
+    reviewsEl.innerHTML = approved.map(r=>{
+      const rating = Math.max(0, Math.min(10, Number(r.rating)||0));
+      return `
       <div class="course-card">
-        <div class="cc-tag">${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</div>
+        <div class="cc-tag">${'★'.repeat(rating)}${'☆'.repeat(10-rating)}</div>
         <p style="font-style:italic;">"${r.text}"</p>
         <h3 style="font-size:14px;margin-top:8px;">— ${r.authorName}</h3>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }else{
     reviewsSection.style.display = 'none';
   }
@@ -3486,7 +3503,7 @@ async function rejectReward(reqId){
 /* ============ REVIEWS (testimonials) ============ */
 function renderReviews(){
   const rows = DB.reviews.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(r=>`<tr>
-    <td>${r.authorName}</td><td>${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</td><td style="max-width:280px;">${r.text}</td>
+    <td>${r.authorName}</td><td>${'★'.repeat(Math.max(0,Math.min(10,Number(r.rating)||0)))}${'☆'.repeat(10-Math.max(0,Math.min(10,Number(r.rating)||0)))}</td><td style="max-width:280px;">${r.text}</td>
     <td><span class="pill ${r.approved?'green':'gray'}">${r.approved?'Chop etilgan':'Yashirin'}</span></td>
     <td>
       <button class="icon-btn" onclick="toggleReviewApproved('${r.id}')">${r.approved?'Yashirish':'Chop etish'}</button>
@@ -3502,7 +3519,7 @@ function renderReviews(){
       </table>
       <div class="form-row">
         <div><label>Muallif ismi</label><input type="text" id="rv-author"></div>
-        <div><label>Baho (1-5)</label><input type="number" id="rv-rating" min="1" max="5" value="5"></div>
+        <div><label>Baho (1-10)</label><input type="number" id="rv-rating" min="1" max="10" value="10"></div>
       </div>
       <label>Sharh matni</label><textarea id="rv-text" rows="2"></textarea>
       <div class="err" id="rv-err"></div>
@@ -3511,7 +3528,7 @@ function renderReviews(){
 }
 async function addReview(){
   const authorName = document.getElementById('rv-author').value.trim();
-  const rating = Number(document.getElementById('rv-rating').value)||5;
+  const rating = Math.max(1, Math.min(10, Number(document.getElementById('rv-rating').value)||10));
   const text = document.getElementById('rv-text').value.trim();
   const err = document.getElementById('rv-err');
   if(!authorName || !text){ err.textContent = 'Ism va matnni kiriting.'; return; }
@@ -3539,18 +3556,18 @@ function renderMyReview(u){
   const myReviews = DB.reviews.filter(r=>r.authorUserId===u.id).slice().sort((a,b)=>b.date.localeCompare(a.date));
   const rows = myReviews.map(r=>`<tr>
     <td>${r.date}</td>
-    <td>${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</td>
+    <td>${'★'.repeat(Math.max(0,Math.min(10,Number(r.rating)||0)))}${'☆'.repeat(10-Math.max(0,Math.min(10,Number(r.rating)||0)))}</td>
     <td style="max-width:320px;">${r.text}</td>
     <td><span class="pill ${r.approved?'green':'gray'}">${r.approved?'Chop etilgan':'Ko\'rib chiqilmoqda'}</span></td>
   </tr>`).join('');
   return `
     <div class="topbar"><div><h1>Sharh qoldirish</h1><p>Sharhingiz administratsiya tomonidan tekshirilgach, bosh sahifada chop etiladi</p></div></div>
     <div class="card">
-      <label>Baho (1-5)</label>
-      <div style="display:flex;gap:6px;margin-bottom:12px;">
-        ${[1,2,3,4,5].map(n=>`<button type="button" class="btn sm outline" id="my-rv-star-${n}" onclick="setMyReviewRating(${n})" style="padding:6px 12px;">${n}★</button>`).join('')}
+      <label>Baho (1-10)</label>
+      <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+        ${[1,2,3,4,5,6,7,8,9,10].map(n=>`<button type="button" class="btn sm outline" id="my-rv-star-${n}" onclick="setMyReviewRating(${n})" style="padding:6px 10px;">${n}★</button>`).join('')}
       </div>
-      <input type="hidden" id="my-rv-rating" value="5">
+      <input type="hidden" id="my-rv-rating" value="10">
       <label>Sharh matni</label>
       <textarea id="my-rv-text" rows="3" placeholder="Akademiya Pushkina haqida fikringizni yozing..."></textarea>
       <div class="err" id="my-rv-err"></div>
@@ -3567,21 +3584,21 @@ function renderMyReview(u){
 }
 function setMyReviewRating(n){
   document.getElementById('my-rv-rating').value = n;
-  for(let i=1;i<=5;i++){
+  for(let i=1;i<=10;i++){
     const btn = document.getElementById('my-rv-star-'+i);
     if(btn) btn.className = 'btn sm '+(i<=n?'gold':'outline');
   }
 }
 async function submitMyReview(userId){
   const text = document.getElementById('my-rv-text').value.trim();
-  const rating = Number(document.getElementById('my-rv-rating').value)||5;
+  const rating = Math.max(1, Math.min(10, Number(document.getElementById('my-rv-rating').value)||10));
   const err = document.getElementById('my-rv-err');
   if(!text){ err.textContent = 'Sharh matnini kiriting.'; return; }
   const u = DB.users.find(x=>x.id===userId);
   const newRv = await insertRow('reviews', {authorName:u?u.name:'O\'quvchi', authorUserId:userId, text, rating, date:todayStr(), approved:false});
   DB.reviews.push(newRv);
   document.getElementById('my-rv-text').value = '';
-  setMyReviewRating(5);
+  setMyReviewRating(10);
   renderMain();
   alert('Rahmat! Sharhingiz yuborildi, administratsiya tasdiqlagach bosh sahifada ko\'rinadi.');
 }
