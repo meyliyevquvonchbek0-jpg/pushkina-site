@@ -396,17 +396,24 @@
       <h2>Akademiya Pushkina</h2>
     </div>
     <div class="landing-actions">
-      <button class="btn outline sm" onclick="showLogin()">Kirish</button>
-      <button class="btn gold sm" onclick="openRegisterModal()">Ro'yxatdan o'tish</button>
+      <div class="lang-switcher-slot" data-compact="1" style="margin-right:8px;"></div>
+      <button class="btn outline sm" id="landing-kirish-btn" onclick="showLogin()">Kirish</button>
+      <button class="btn gold sm" id="landing-royxat-btn" onclick="openRegisterModal()">Ro'yxatdan o'tish</button>
     </div>
   </div>
 
+  <div id="install-banner" style="display:none;background:#1B2540;color:#fff;padding:10px 20px;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;font-size:13.5px;">
+    <span id="install-banner-text">📲 Akademiya Pushkina'ni telefoningizga ilova sifatida o'rnating — tezroq va qulayroq!</span>
+    <button class="btn gold sm" id="install-banner-btn" onclick="triggerInstallPrompt()">O'rnatish</button>
+    <button class="btn outline sm" onclick="dismissInstallBanner()" style="border-color:rgba(255,255,255,0.4);color:#fff;">Keyinroq</button>
+  </div>
+
   <div class="landing-hero">
-    <h1>Tillarni biz bilan o'rganing</h1>
+    <h1 id="landing-hero-title">Tillarni biz bilan o'rganing</h1>
     <p id="landing-about">Akademiya Pushkina — tajribali o'qituvchilar, zamonaviy metodika va shaxsiy yondashuv bilan turli xorijiy tillarni noldan yuqori darajagacha o'rgatadigan ta'lim markazi.</p>
     <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-      <button class="btn gold" onclick="openRegisterModal()">Ro'yxatdan o'tish</button>
-      <button class="btn outline" onclick="showLogin()">Tizimga kirish</button>
+      <button class="btn gold" id="landing-hero-royxat-btn" onclick="openRegisterModal()">Ro'yxatdan o'tish</button>
+      <button class="btn outline" id="landing-hero-kirish-btn" onclick="showLogin()">Tizimga kirish</button>
     </div>
   </div>
 
@@ -468,6 +475,7 @@
     <div class="user-box">
       <div class="name" id="cur-user-name">—</div>
       <div class="role" id="cur-user-role">—</div>
+      <div class="lang-switcher-slot" data-compact="1" style="margin-bottom:8px;"></div>
       <button class="btn gold sm" style="width:100%;margin-bottom:6px;" onclick="openChangePasswordModal()">Profil sozlamalari</button>
       <button class="btn danger sm" style="width:100%;" onclick="handleLogout()">Chiqish</button>
     </div>
@@ -602,6 +610,139 @@ let DB = {
   dailyTotals: [],
   nazoratScores: []
 };
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e)=>{
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if(!localStorage.getItem('pushkina_install_dismissed')){
+    const banner = document.getElementById('install-banner');
+    if(banner) banner.style.display = 'flex';
+  }
+});
+function triggerInstallPrompt(){
+  const banner = document.getElementById('install-banner');
+  if(deferredInstallPrompt){
+    deferredInstallPrompt.prompt();
+    deferredInstallPrompt.userChoice.finally(()=>{
+      deferredInstallPrompt = null;
+      if(banner) banner.style.display = 'none';
+    });
+  }else if(banner){
+    banner.style.display = 'none';
+  }
+}
+function dismissInstallBanner(){
+  const banner = document.getElementById('install-banner');
+  if(banner) banner.style.display = 'none';
+  try{ localStorage.setItem('pushkina_install_dismissed', '1'); }catch(e){}
+}
+window.addEventListener('appinstalled', ()=>{
+  const banner = document.getElementById('install-banner');
+  if(banner) banner.style.display = 'none';
+});
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(e=>console.error('SW register failed', e));
+  });
+}
+(function(){
+  const isIos = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+  const isInStandaloneMode = ('standalone' in window.navigator) && window.navigator.standalone;
+  if(isIos && !isInStandaloneMode && !localStorage.getItem('pushkina_install_dismissed')){
+    const banner = document.getElementById('install-banner');
+    const text = document.getElementById('install-banner-text');
+    const btn = document.getElementById('install-banner-btn');
+    if(banner && text && btn){
+      text.textContent = "📲 Ilovaga o'rnatish: pastdagi Ulashish (Share) tugmasini bosing, so'ng \"Add to Home Screen\" ni tanlang.";
+      btn.style.display = 'none';
+      banner.style.display = 'flex';
+    }
+  }
+})();
+const TR = {
+  ru: {
+    // Nav
+    "Bosh sahifa":"Главная","O'qituvchilar":"Учителя","O'quvchilar":"Ученики","Dars jadvali":"Расписание",
+    "Davomat":"Посещаемость","To'lovlar":"Оплаты","Video darslar":"Видеоуроки","Materiallar":"Материалы",
+    "Uy vazifalari":"Домашние задания","Testlar":"Тесты","Reyting":"Рейтинг","Sovg'alar":"Подарки",
+    "Sovg'a so'rovlari":"Запросы подарков","Sharhlar":"Отзывы","Oyliklar":"Зарплаты",
+    "Telegram eslatmalar":"Напоминания Telegram","Onlayn darslar":"Онлайн уроки","So'rovlar":"Заявки",
+    "Foydalanuvchilar":"Пользователи","Sozlamalar":"Настройки","Tarjimon":"Переводчик",
+    "Mening jadvalim":"Мое расписание","O'quvchilarim":"Мои ученики","Davomat belgilash":"Отметить посещаемость",
+    "Markaz guruhlari":"Группы центра","Materiallarim":"Мои материалы","Testlarim":"Мои тесты",
+    "Onlayn dars":"Онлайн урок","Dars jadvalim":"Мое расписание","Davomatim":"Моя посещаемость",
+    "Baholarim":"Мои оценки","Sharh qoldirish":"Оставить отзыв","Uy vazifalarim":"Мои домашние задания",
+    // Roles
+    "Administrator":"Администратор","O'qituvchi":"Учитель","O'quvchi":"Ученик",
+    // Common buttons/labels
+    "Saqlash":"Сохранить","Bekor qilish":"Отмена","O'chirish":"Удалить","Tahrirlash":"Изменить",
+    "Qo'shish":"Добавить","Yuborish":"Отправить","Yopish":"Закрыть","Kirish":"Войти",
+    "Ro'yxatdan o'tish":"Регистрация","Tizimga kirish":"Войти в систему","Chiqish":"Выход",
+    "Profil sozlamalari":"Настройки профиля","Ism":"Имя","Ism familiya":"Имя фамилия","Guruh":"Группа",
+    "Holat":"Статус","Sana":"Дата","Login":"Логин","Parol":"Пароль","Telefon":"Телефон",
+    "Keldi":"Пришёл","Kelmadi":"Не пришёл","Bugun":"Сегодня","Excel'ga eksport":"Экспорт в Excel",
+    "Tillarni biz bilan o'rganing":"Изучайте языки с нами"
+  },
+  en: {
+    "Bosh sahifa":"Home","O'qituvchilar":"Teachers","O'quvchilar":"Students","Dars jadvali":"Schedule",
+    "Davomat":"Attendance","To'lovlar":"Payments","Video darslar":"Video lessons","Materiallar":"Materials",
+    "Uy vazifalari":"Homework","Testlar":"Tests","Reyting":"Leaderboard","Sovg'alar":"Rewards",
+    "Sovg'a so'rovlari":"Reward requests","Sharhlar":"Reviews","Oyliklar":"Salaries",
+    "Telegram eslatmalar":"Telegram reminders","Onlayn darslar":"Live classes","So'rovlar":"Requests",
+    "Foydalanuvchilar":"Users","Sozlamalar":"Settings","Tarjimon":"Translator",
+    "Mening jadvalim":"My schedule","O'quvchilarim":"My students","Davomat belgilash":"Mark attendance",
+    "Markaz guruhlari":"Center groups","Materiallarim":"My materials","Testlarim":"My tests",
+    "Onlayn dars":"Live class","Dars jadvalim":"My schedule","Davomatim":"My attendance",
+    "Baholarim":"My grades","Sharh qoldirish":"Leave a review","Uy vazifalarim":"My homework",
+    "Administrator":"Administrator","O'qituvchi":"Teacher","O'quvchi":"Student",
+    "Saqlash":"Save","Bekor qilish":"Cancel","O'chirish":"Delete","Tahrirlash":"Edit",
+    "Qo'shish":"Add","Yuborish":"Send","Yopish":"Close","Kirish":"Log in",
+    "Ro'yxatdan o'tish":"Register","Tizimga kirish":"Log in","Chiqish":"Log out",
+    "Profil sozlamalari":"Profile settings","Ism":"Name","Ism familiya":"Full name","Guruh":"Group",
+    "Holat":"Status","Sana":"Date","Login":"Login","Parol":"Password","Telefon":"Phone",
+    "Keldi":"Present","Kelmadi":"Absent","Bugun":"Today","Excel'ga eksport":"Export to Excel",
+    "Tillarni biz bilan o'rganing":"Learn languages with us"
+  }
+};
+let currentLang = 'uz';
+try{ currentLang = localStorage.getItem('pushkina_lang') || 'uz'; }catch(e){}
+function t(text){
+  if(currentLang==='uz' || !text) return text;
+  const dict = TR[currentLang];
+  return (dict && dict[text]) || text;
+}
+function setLang(lang){
+  currentLang = lang;
+  try{ localStorage.setItem('pushkina_lang', lang); }catch(e){}
+  renderLandingContent();
+  renderLangSwitchers();
+  if(typeof session !== 'undefined' && session){ renderNav(); renderMain(); }
+}
+function langSwitcherHtml(compact){
+  const langs = [['uz','UZ'],['ru','RU'],['en','EN']];
+  return `<div class="lang-switcher" style="display:flex;gap:4px;">${langs.map(([code,label])=>
+    `<button class="btn ${compact?'sm':''} ${currentLang===code?'gold':'outline'}" style="padding:${compact?'4px 8px':'6px 10px'};min-width:auto;" onclick="setLang('${code}')">${label}</button>`
+  ).join('')}</div>`;
+}
+function applyStaticTranslations(){
+  const map = {
+    'landing-kirish-btn': 'Kirish',
+    'landing-royxat-btn': "Ro'yxatdan o'tish",
+    'landing-hero-royxat-btn': "Ro'yxatdan o'tish",
+    'landing-hero-kirish-btn': 'Tizimga kirish',
+    'landing-hero-title': "Tillarni biz bilan o'rganing"
+  };
+  for(const id in map){
+    const el = document.getElementById(id);
+    if(el) el.textContent = t(map[id]);
+  }
+}
+function renderLangSwitchers(){
+  document.querySelectorAll('.lang-switcher-slot').forEach(el=>{
+    el.innerHTML = langSwitcherHtml(el.dataset.compact==='1');
+  });
+  applyStaticTranslations();
+}
 let session = null; // {userId, role}
 let activeTab = 'home';
 const DAYS = ['Dush','Sesh','Chor','Pay','Jum','Shan','Yak'];
@@ -634,6 +775,7 @@ async function boot(){
     DB.nazoratScores = nazoratScores;
     try{ renderSocialFloat(); }catch(e){ console.error('renderSocialFloat error', e); }
     try{ renderLandingContent(); }catch(e){ console.error('renderLandingContent error', e); }
+    try{ renderLangSwitchers(); }catch(e){ console.error('renderLangSwitchers error', e); }
     const bootLoader = document.getElementById('boot-loader');
     try{
       const saved = localStorage.getItem('pushkina_session');
@@ -791,7 +933,7 @@ function renderRequests(){
     </tr>`;
   }).join('');
   return `
-    <div class="topbar"><div><h1>So'rovlar</h1><p>Ro'yxatdan o'tish uchun kutayotgan o'quvchilar</p></div></div>
+    <div class="topbar"><div><h1>${t('So\'rovlar')}</h1><p>Ro'yxatdan o'tish uchun kutayotgan o'quvchilar</p></div></div>
     <div class="card">
       <table>
         <thead><tr><th>Ism</th><th>O'qituvchi</th><th>Login</th><th></th></tr></thead>
@@ -1035,13 +1177,13 @@ function renderNav(){
   NAV[u.role].forEach(item=>{
     const div = document.createElement('div');
     div.className = 'nav-item' + (activeTab===item.id ? ' active' : '');
-    div.innerHTML = `<span>${item.icon}</span><span>${item.label}</span>`;
+    div.innerHTML = `<span>${item.icon}</span><span>${t(item.label)}</span>`;
     div.onclick = ()=>{ activeTab = item.id; persistTab(item.id); renderNav(); renderMain(); };
     list.appendChild(div);
   });
   document.getElementById('cur-user-name').textContent = u.name;
   const roleLabel = {admin:'Administrator', teacher:'O\'qituvchi', student:'O\'quvchi'}[u.role];
-  document.getElementById('cur-user-role').textContent = roleLabel;
+  document.getElementById('cur-user-role').textContent = t(roleLabel);
 }
 
 /* ============ MAIN ROUTER ============ */
@@ -1130,7 +1272,7 @@ function renderHome(u){
     const paidThisMonth = DB.payments.filter(p=>p.date && p.date.slice(0,7)===today.slice(0,7)).length;
     const pendingCount = DB.users.filter(u=>u.role==='student' && u.status==='pending').length;
     return `
-      <div class="topbar"><div><h1>Bosh sahifa</h1><p>Akademiya Pushkina — umumiy holat</p></div></div>
+      <div class="topbar"><div><h1>${t('Bosh sahifa')}</h1><p>Akademiya Pushkina — umumiy holat</p></div></div>
       <div class="grid cols-4">
         <div class="metric"><div class="lbl">Jami o'quvchilar</div><div class="val">${totalStudents}</div></div>
         <div class="metric"><div class="lbl">Jami o'qituvchilar</div><div class="val">${totalTeachers}</div></div>
@@ -1193,7 +1335,7 @@ function renderTeachers(){
   }).join('');
   return `
     <div class="topbar">
-      <div><h1>O'qituvchilar</h1><p>Jami: ${DB.teachers.length} ta</p></div>
+      <div><h1>${t('O\'qituvchilar')}</h1><p>Jami: ${DB.teachers.length} ta</p></div>
       <button class="btn gold" onclick="openTeacherModal()">+ O'qituvchi qo'shish</button>
     </div>
     <div class="card">
@@ -1337,7 +1479,7 @@ function renderTeacherInfo(){
       </div>`;
   }).join('');
   return `
-    <div class="topbar"><div><h1>O'qituvchilar</h1><p>Markazdagi barcha o'qituvchilar haqida ma'lumot</p></div></div>
+    <div class="topbar"><div><h1>${t('O\'qituvchilar')}</h1><p>Markazdagi barcha o'qituvchilar haqida ma'lumot</p></div></div>
     <div class="grid cols-2">${cards || '<div class="empty">Hozircha o\'qituvchi yo\'q</div>'}</div>`;
 }
 
@@ -1369,7 +1511,7 @@ function renderStudents(){
   }).join('');
   return `
     <div class="topbar">
-      <div><h1>O'quvchilar</h1><p>Jami: ${DB.students.length} ta</p></div>
+      <div><h1>${t('O\'quvchilar')}</h1><p>Jami: ${DB.students.length} ta</p></div>
       <button class="btn gold" onclick="openStudentModal()">+ O'quvchi qo'shish</button>
     </div>
     <div class="card">
@@ -1659,7 +1801,7 @@ function renderScheduleAdmin(){
     </tr>`;}).join('');
   const teacherOpts = DB.teachers.map(t=>`<option value="${t.id}">${teacherName(t.id)}</option>`).join('');
   return `
-    <div class="topbar"><div><h1>Dars jadvali</h1><p>Barcha o'qituvchilar bo'yicha</p></div>
+    <div class="topbar"><div><h1>${t('Dars jadvali')}</h1><p>Barcha o'qituvchilar bo'yicha</p></div>
       <button class="btn gold" onclick="sendAllTodayReminders(null)">✈ Bugungi barcha darslar haqida hammaga yuborish</button>
     </div>
     <div class="card">
@@ -1762,7 +1904,7 @@ function renderMyStudents(u){
     return `<tr><td>${su?su.name:'—'}</td><td>${s.group||'—'}</td><td><span class="pill ${pay.ok?'green':'rose'}">${pay.label}</span></td></tr>`;
   }).join('');
   return `
-    <div class="topbar"><div><h1>O'quvchilarim</h1><p>Jami: ${myStudents.length} ta</p></div></div>
+    <div class="topbar"><div><h1>${t('O\'quvchilarim')}</h1><p>Jami: ${myStudents.length} ta</p></div></div>
     <div class="card">
       <table>
         <thead><tr><th>Ism</th><th>Guruh</th><th>To'lov</th></tr></thead>
@@ -1781,7 +1923,7 @@ function renderOtherGroups(u){
     return `<tr><td>${tu?tu.name:'—'}</td><td>${t.subject}</td><td>${count} ta o'quvchi</td></tr>`;
   }).join('');
   return `
-    <div class="topbar"><div><h1>Markaz guruhlari</h1><p>Boshqa o'qituvchilarning guruh hajmi (faqat son, shaxsiy ma'lumotsiz)</p></div></div>
+    <div class="topbar"><div><h1>${t('Markaz guruhlari')}</h1><p>Boshqa o'qituvchilarning guruh hajmi (faqat son, shaxsiy ma'lumotsiz)</p></div></div>
     <div class="card">
       <table>
         <thead><tr><th>O'qituvchi</th><th>Fan</th><th>O'quvchilar soni</th></tr></thead>
@@ -2103,7 +2245,7 @@ function renderAttendance(u){
     </div>`;
   return `
     <div class="topbar">
-      <div><h1>Davomat</h1><p>Tanlangan sana: ${selectedAttendanceDate}${isEditable?' — belgilash mumkin':''}</p></div>
+      <div><h1>${t('Davomat')}</h1><p>Tanlangan sana: ${selectedAttendanceDate}${isEditable?' — belgilash mumkin':''}</p></div>
       ${u.role==='admin' ? `<button class="btn outline sm" onclick="exportAttendanceCSV()">📤 Excel'ga eksport</button>` : ''}
     </div>
     ${groupChips}
@@ -2238,7 +2380,7 @@ function renderMyAttendance(u){
   const total = recs.length;
   const came = recs.filter(r=>r.present).length;
   return `
-    <div class="topbar"><div><h1>Davomatim</h1><p>${total>0 ? `${came} / ${total} kun qatnashgan · ${s?s.coins||0:0} coin` : 'Hali yozuv yo\'q'}</p></div></div>
+    <div class="topbar"><div><h1>${t('Davomatim')}</h1><p>${total>0 ? `${came} / ${total} kun qatnashgan · ${s?s.coins||0:0} coin` : 'Hali yozuv yo\'q'}</p></div></div>
     <div class="card">
       <table>
         <thead><tr><th>Sana</th><th>Holat</th></tr></thead>
@@ -2265,7 +2407,7 @@ function renderMyRatings(u){
     </div>`;
   }).join('');
   return `
-    <div class="topbar"><div><h1>Baholarim</h1><p>Bu oy (${month}) — o'rtacha: ${avg} / 10</p></div></div>
+    <div class="topbar"><div><h1>${t('Baholarim')}</h1><p>Bu oy (${month}) — o'rtacha: ${avg} / 10</p></div></div>
     <div class="card">
       <div style="display:flex;gap:6px;align-items:flex-end;">${bars || '<div class="empty">Bu oy hali baho yo\'q</div>'}</div>
     </div>`;
@@ -2311,7 +2453,7 @@ function renderPayments(u){
   }).join('');
   return `
     <div class="topbar">
-      <div><h1>To'lovlar</h1><p>${isAdmin?"Barcha o'quvchilar bo'yicha to'lov holati":"O'zingizning o'quvchilaringiz bo'yicha to'lov holati"}</p></div>
+      <div><h1>${t('To\'lovlar')}</h1><p>${isAdmin?"Barcha o'quvchilar bo'yicha to'lov holati":"O'zingizning o'quvchilaringiz bo'yicha to'lov holati"}</p></div>
       <button class="btn outline sm" onclick="exportPaymentsCSV()">📤 Excel'ga eksport</button>
     </div>
     <div class="card">
@@ -2450,7 +2592,7 @@ function renderVideos(u){
   const teacherOpts = DB.teachers.map(t=>`<option value="${t.id}">${teacherName(t.id)}</option>`).join('');
   return `
     <div class="topbar">
-      <div><h1>Video darslar</h1><p>Jami: ${DB.videos.length} ta dars</p></div>
+      <div><h1>${t('Video darslar')}</h1><p>Jami: ${DB.videos.length} ta dars</p></div>
       ${canAdd ? `<button class="btn gold" onclick="openVideoModal()">+ Video qo'shish</button>` : ''}
     </div>
     <div class="grid cols-3">${cards || '<div class="empty">Hozircha video dars yo\'q</div>'}</div>`;
@@ -2634,7 +2776,7 @@ function renderSalaries(){
   }).join('');
   return `
     <div class="topbar">
-      <div><h1>Oyliklar</h1><p>Joriy oy (${month}) — har bir to'lov 50/50 bo'linadi: markazga va o'qituvchiga</p></div>
+      <div><h1>${t('Oyliklar')}</h1><p>Joriy oy (${month}) — har bir to'lov 50/50 bo'linadi: markazga va o'qituvchiga</p></div>
       <button class="btn outline sm" onclick="exportSalariesCSV()">📤 Excel'ga eksport</button>
     </div>
     <div class="card">
@@ -2664,7 +2806,7 @@ async function sendTelegramMessage(chatId, text){
 }
 function renderTelegramReminders(){
   if(!DB.settings.telegramBotToken){
-    return `<div class="topbar"><div><h1>Telegram eslatmalar</h1></div></div>
+    return `<div class="topbar"><div><h1>${t('Telegram eslatmalar')}</h1></div></div>
       <div class="card"><div class="empty">Avval "Sozlamalar" bo'limida Telegram bot tokenini kiriting.</div></div>`;
   }
   const today = todayStr();
@@ -2691,7 +2833,7 @@ function renderTelegramReminders(){
   }).join('');
   return `
     <div class="topbar">
-      <div><h1>Telegram eslatmalar</h1><p>To'lov muddati yaqinlashgan yoki o'tgan, Telegram ulangan o'quvchilar</p></div>
+      <div><h1>${t('Telegram eslatmalar')}</h1><p>To'lov muddati yaqinlashgan yoki o'tgan, Telegram ulangan o'quvchilar</p></div>
       ${relevant.length ? `<button class="btn gold" onclick="sendAllReminders()">Hammaga yuborish (${relevant.length})</button>` : ''}
     </div>
     <div class="card">
@@ -2746,7 +2888,7 @@ async function sendAllReminders(){
 /* ============ SETTINGS (admin — social links) ============ */
 function renderSettings(){
   return `
-    <div class="topbar"><div><h1>Sozlamalar</h1><p>Bosh sahifa matni, ijtimoiy tarmoq havolalari va bot sozlamalari</p></div></div>
+    <div class="topbar"><div><h1>${t('Sozlamalar')}</h1><p>Bosh sahifa matni, ijtimoiy tarmoq havolalari va bot sozlamalari</p></div></div>
     <div class="card">
       <h3>Bosh sahifa (barchaga ochiq)</h3>
       <label>"Biz haqimizda" matni</label>
@@ -2822,7 +2964,7 @@ function renderLiveClass(u){
     const room = roomNameFor(t.id);
     const roomUrl = `https://meet.jit.si/${room}#config.prejoinPageEnabled=false`;
     return `
-      <div class="topbar"><div><h1>Onlayn dars</h1><p>${t.isLive ? 'Efir hozir FAOL — o\'quvchilaringiz qo\'shila oladi' : 'Efir hozircha o\'chirilgan'}</p></div></div>
+      <div class="topbar"><div><h1>${t('Onlayn dars')}</h1><p>${t.isLive ? 'Efir hozir FAOL — o\'quvchilaringiz qo\'shila oladi' : 'Efir hozircha o\'chirilgan'}</p></div></div>
       <div class="card">
         ${t.isLive
           ? `<button class="btn danger" onclick="toggleLive('${t.id}', false)">Efirni tugatish</button>`
@@ -2839,11 +2981,11 @@ function renderLiveClass(u){
   if(u.role==='student'){
     const s = DB.students.find(x=>x.userId===u.id);
     const t = s ? DB.teachers.find(x=>x.id===s.teacherId) : null;
-    if(!t) return `<div class="topbar"><div><h1>Onlayn dars</h1></div></div><div class="empty">O'qituvchi biriktirilmagan</div>`;
+    if(!t) return `<div class="topbar"><div><h1>${t('Onlayn dars')}</h1></div></div><div class="empty">O'qituvchi biriktirilmagan</div>`;
     const room = roomNameFor(t.id);
     const roomUrl = `https://meet.jit.si/${room}#config.prejoinPageEnabled=false`;
     return `
-      <div class="topbar"><div><h1>Onlayn dars</h1><p>${teacherName(t.id)}</p></div></div>
+      <div class="topbar"><div><h1>${t('Onlayn dars')}</h1><p>${teacherName(t.id)}</p></div></div>
       ${t.isLive
         ? `<div class="card">
             <p style="margin-bottom:12px;">O'qituvchingiz efirni boshladi.</p>
@@ -2858,7 +3000,7 @@ function renderLiveClass(u){
     return `<tr><td>${tu?tu.name:'—'}</td><td><span class="pill ${t.isLive?'green':'gray'}">${t.isLive?'Efirda':'O\'chirilgan'}</span></td></tr>`;
   }).join('');
   return `
-    <div class="topbar"><div><h1>Onlayn darslar</h1><p>Barcha o'qituvchilarning efir holati</p></div></div>
+    <div class="topbar"><div><h1>${t('Onlayn darslar')}</h1><p>Barcha o'qituvchilarning efir holati</p></div></div>
     <div class="card">
       <table>
         <thead><tr><th>O'qituvchi</th><th>Holat</th></tr></thead>
@@ -2876,7 +3018,7 @@ async function toggleLive(teacherId, isLive){
 /* ============ TRANSLATOR ============ */
 function renderTranslator(){
   return `
-    <div class="topbar"><div><h1>Tarjimon</h1><p>So'z yoki matnni tarjima qiling</p></div></div>
+    <div class="topbar"><div><h1>${t('Tarjimon')}</h1><p>So'z yoki matnni tarjima qiling</p></div></div>
     <div class="card">
       <div class="form-row" style="margin-bottom:12px;">
         <div>
@@ -3011,7 +3153,7 @@ function renderHomework(u){
         </div>
       </div>`;
     }).join('');
-    return `<div class="topbar"><div><h1>Uy vazifalarim</h1></div></div>${cards || '<div class="card"><div class="empty">Hozircha uy vazifasi yo\'q</div></div>'}`;
+    return `<div class="topbar"><div><h1>${t('Uy vazifalarim')}</h1></div></div>${cards || '<div class="card"><div class="empty">Hozircha uy vazifasi yo\'q</div></div>'}`;
   }
   // admin/teacher
   const t = u.role==='teacher' ? DB.teachers.find(x=>x.userId===u.id) : null;
@@ -3043,7 +3185,7 @@ function renderHomework(u){
   const teacherOpts = DB.teachers.map(tt=>`<option value="${tt.id}">${teacherName(tt.id)}</option>`).join('');
   return `
     <div class="topbar">
-      <div><h1>Uy vazifalari</h1></div>
+      <div><h1>${t('Uy vazifalari')}</h1></div>
       <button class="btn gold" onclick="openHomeworkModal('${u.role}','${myTeacherId||''}')">+ Yangi vazifa</button>
     </div>
     ${cards || '<div class="card"><div class="empty">Hozircha vazifa yo\'q</div></div>'}`;
@@ -3133,7 +3275,7 @@ function renderTests(u){
   const teacherOpts = DB.teachers.map(tt=>`<option value="${tt.id}">${teacherName(tt.id)}</option>`).join('');
   return `
     <div class="topbar">
-      <div><h1>Testlar</h1><p>Jami: ${list.length} ta</p></div>
+      <div><h1>${t('Testlar')}</h1><p>Jami: ${list.length} ta</p></div>
       <button class="btn gold" onclick="openTestModal('${u.role}','${myTeacherId||''}')">+ Yangi test</button>
     </div>
     <div class="card">
@@ -3382,7 +3524,7 @@ function renderStudentTests(u){
     </tr>`;
   }).join('');
   return `
-    <div class="topbar"><div><h1>Testlarim</h1></div></div>
+    <div class="topbar"><div><h1>${t('Testlarim')}</h1></div></div>
     <div class="card">
       <table>
         <thead><tr><th>Sarlavha</th><th>Fan</th><th>Vaqt</th><th>Savollar</th><th></th></tr></thead>
@@ -3477,7 +3619,7 @@ function renderLeaderboard(u){
     return `<tr><td>${i+1}</td><td>${name}</td><td>${s.coins||0} 🪙</td></tr>`;
   }).join('');
   return `
-    <div class="topbar"><div><h1>Reyting</h1><p>Eng ko'p coin to'plagan o'quvchilar</p></div></div>
+    <div class="topbar"><div><h1>${t('Reyting')}</h1><p>Eng ko'p coin to'plagan o'quvchilar</p></div></div>
     <div class="card">
       <table>
         <thead><tr><th>#</th><th>Ism</th><th>Coin</th></tr></thead>
@@ -3502,14 +3644,14 @@ function renderRewards(u){
     </div>`;
   }).join('');
   return `
-    <div class="topbar"><div><h1>Sovg'alar</h1><p>Sizda: ${myCoins} 🪙</p></div></div>
+    <div class="topbar"><div><h1>${t('Sovg\'alar')}</h1><p>Sizda: ${myCoins} 🪙</p></div></div>
     <div class="grid cols-3">${cards || '<div class="empty">Hozircha sovg\'a yo\'q</div>'}</div>`;
 }
 function renderRewardsAdmin(){
   const rows = DB.rewards.map(r=>`<tr><td>${r.title}</td><td>${r.costCoins} 🪙</td><td>${r.description||''}</td>
     <td><button class="icon-btn rose" onclick="deleteReward('${r.id}')">O'chirish</button></td></tr>`).join('');
   return `
-    <div class="topbar"><div><h1>Sovg'alar</h1><p>O'quvchilar coin evaziga oladigan sovg'alar</p></div></div>
+    <div class="topbar"><div><h1>${t('Sovg\'alar')}</h1><p>O'quvchilar coin evaziga oladigan sovg'alar</p></div></div>
     <div class="card">
       <table style="margin-bottom:16px;">
         <thead><tr><th>Nomi</th><th>Narxi</th><th>Tavsif</th><th></th></tr></thead>
@@ -3563,7 +3705,7 @@ function renderRewardRequests(){
     </tr>`;
   }).join('');
   return `
-    <div class="topbar"><div><h1>Sovg'a so'rovlari</h1></div></div>
+    <div class="topbar"><div><h1>${t('Sovg\'a so\'rovlari')}</h1></div></div>
     <div class="card">
       <table>
         <thead><tr><th>O'quvchi</th><th>Sovg'a</th><th>Narxi</th><th></th></tr></thead>
@@ -3603,7 +3745,7 @@ function renderReviews(){
     </td>
   </tr>`).join('');
   return `
-    <div class="topbar"><div><h1>Sharhlar</h1><p>Bosh sahifada ko'rinadigan mijoz sharhlari</p></div></div>
+    <div class="topbar"><div><h1>${t('Sharhlar')}</h1><p>Bosh sahifada ko'rinadigan mijoz sharhlari</p></div></div>
     <div class="card">
       <table style="margin-bottom:16px;">
         <thead><tr><th>Muallif</th><th>Baho</th><th>Matn</th><th>Holat</th><th></th></tr></thead>
@@ -3653,7 +3795,7 @@ function renderMyReview(u){
     <td><span class="pill ${r.approved?'green':'gray'}">${r.approved?'Chop etilgan':'Ko\'rib chiqilmoqda'}</span></td>
   </tr>`).join('');
   return `
-    <div class="topbar"><div><h1>Sharh qoldirish</h1><p>Sharhingiz administratsiya tomonidan tekshirilgach, bosh sahifada chop etiladi</p></div></div>
+    <div class="topbar"><div><h1>${t('Sharh qoldirish')}</h1><p>Sharhingiz administratsiya tomonidan tekshirilgach, bosh sahifada chop etiladi</p></div></div>
     <div class="card">
       <label>Baho (1-10)</label>
       <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
@@ -3708,7 +3850,7 @@ function renderUsers(){
     </tr>`;
   }).join('');
   return `
-    <div class="topbar"><div><h1>Foydalanuvchilar</h1><p>Barcha login hisoblari</p></div></div>
+    <div class="topbar"><div><h1>${t('Foydalanuvchilar')}</h1><p>Barcha login hisoblari</p></div></div>
     <div class="card">
       <table>
         <thead><tr><th>Ism</th><th>Login</th><th>Rol</th><th></th></tr></thead>
