@@ -1363,7 +1363,7 @@ function renderStudents(){
   return `
     <div class="topbar">
       <div><h1>O'quvchilar</h1><p>Jami: ${DB.students.length} ta</p></div>
-      <button class="btn gold" onclick="openStudentModal('${teacherOpts.replace(/"/g,'&quot;')}')">+ O'quvchi qo'shish</button>
+      <button class="btn gold" onclick="openStudentModal()">+ O'quvchi qo'shish</button>
     </div>
     <div class="card">
       <table>
@@ -1372,7 +1372,11 @@ function renderStudents(){
       </table>
     </div>`;
 }
-function openStudentModal(teacherOptsHtml){
+function openStudentModal(){
+  const teacherOptsHtml = DB.teachers.map(t=>{
+    const u = DB.users.find(x=>x.id===t.userId);
+    return `<option value="${t.id}">${u?u.name:'—'} (${t.subject})</option>`;
+  }).join('');
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.innerHTML = `
@@ -2269,12 +2273,19 @@ function renderPayments(u){
   const rows = pool.map(s=>{
     const su = DB.users.find(x=>x.id===s.userId);
     const pay = getPaymentStatus(s.id);
+    const nameEsc = (su?su.name:'').replace(/'/g,"\\'");
+    const payBtn = pay.ok
+      ? `<button class="btn sm outline" disabled title="Muddati tugamaguncha yangi to'lov kiritilmaydi" style="opacity:.5;cursor:not-allowed;">🔒 To'lov qo'shish</button>`
+      : `<button class="btn sm outline" onclick="openPaymentModal('${s.id}', '${nameEsc}')">To'lov qo'shish</button>`;
     return `<tr>
       <td>${su?su.name:'—'}</td>
       <td>${s.group||'—'}</td>
       ${isAdmin?`<td>${teacherName(s.teacherId)}</td>`:''}
       <td><span class="pill ${pay.ok?'green':'rose'}">${pay.label}</span></td>
-      <td><button class="btn sm outline" onclick="openPaymentModal('${s.id}', '${(su?su.name:'').replace(/'/g,"\\'")}')">To'lov qo'shish</button></td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${payBtn}
+        <button class="btn sm outline" onclick="showPaymentHistoryModal('${s.id}', '${nameEsc}')">🕘 Tarix</button>
+      </td>
     </tr>`;
   }).join('');
   return `
@@ -2314,6 +2325,28 @@ function updatePaymentSplitPreview(){
   const half = amount/2;
   el.textContent = amount>0 ? `Markazga: ${half.toLocaleString()} so'm · O'qituvchiga: ${half.toLocaleString()} so'm` : '';
 }
+function showPaymentHistoryModal(studentId, studentName){
+  const recs = DB.payments.filter(p=>p.studentId===studentId).sort((a,b)=>b.date.localeCompare(a.date));
+  const rows = recs.map(p=>`<tr>
+    <td>${p.date}</td>
+    <td>${Number(p.amount).toLocaleString()} so'm</td>
+    <td>${p.paidUntil} gacha</td>
+  </tr>`).join('');
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>To'lovlar tarixi — ${studentName}</h3>
+      <table>
+        <thead><tr><th>Sana</th><th>Summa</th><th>Muddat</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="3" class="empty">Hali to\'lov kiritilmagan</td></tr>'}</tbody>
+      </table>
+      <div class="modal-actions" style="margin-top:14px;">
+        <button class="btn outline" onclick="this.closest('.modal-bg').remove()">Yopish</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+}
 async function savePayment(studentId){
   const amount = document.getElementById('p-amount').value;
   const date = document.getElementById('p-date').value;
@@ -2321,6 +2354,11 @@ async function savePayment(studentId){
   const err = document.getElementById('p-err');
   const btn = document.getElementById('p-save-btn');
   if(btn.disabled) return;
+  const currentStatus = getPaymentStatus(studentId);
+  if(currentStatus.ok){
+    err.textContent = `Bu o'quvchi ${currentStatus.label.replace(' gacha to\'langan','')} gacha to'lagan — yangi to'lov muddat tugagach kiritiladi.`;
+    return;
+  }
   if(!amount || !date || !paidUntil){ err.textContent = 'Barcha maydonlarni to\'ldiring.'; return; }
   btn.disabled = true; btn.textContent = 'Saqlanmoqda...';
   try{
@@ -2361,7 +2399,7 @@ function renderVideos(u){
   return `
     <div class="topbar">
       <div><h1>Video darslar</h1><p>Jami: ${DB.videos.length} ta dars</p></div>
-      ${canAdd ? `<button class="btn gold" onclick="openVideoModal('${teacherOpts.replace(/"/g,'&quot;')}')">+ Video qo'shish</button>` : ''}
+      ${canAdd ? `<button class="btn gold" onclick="openVideoModal()">+ Video qo'shish</button>` : ''}
     </div>
     <div class="grid cols-3">${cards || '<div class="empty">Hozircha video dars yo\'q</div>'}</div>`;
 }
@@ -2380,7 +2418,8 @@ function toEmbeddable(url){
   }
   return `<div style="padding:16px;font-size:12.5px;color:var(--text-dim);">Havola: <a href="${url}" target="_blank" rel="noopener">${url}</a></div>`;
 }
-function openVideoModal(teacherOptsHtml){
+function openVideoModal(){
+  const teacherOptsHtml = DB.teachers.map(t=>`<option value="${t.id}">${teacherName(t.id)}</option>`).join('');
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.innerHTML = `
@@ -2464,11 +2503,12 @@ function renderMaterials(u){
   return `
     <div class="topbar">
       <div><h1>${u.role==='student' ? 'Materiallar' : 'Materiallar'}</h1><p>${u.role==='student' ? 'Faqat sizning o\'qituvchingiz joylagan materiallar' : 'Jami: '+list.length+' ta'}</p></div>
-      ${canAdd ? `<button class="btn gold" onclick="openMaterialModal('${teacherOpts.replace(/"/g,'&quot;')}', '${u.role}')">+ Material qo'shish</button>` : ''}
+      ${canAdd ? `<button class="btn gold" onclick="openMaterialModal('${u.role}')">+ Material qo'shish</button>` : ''}
     </div>
     <div class="grid cols-3">${cards || '<div class="empty">Hozircha material yo\'q</div>'}</div>`;
 }
-function openMaterialModal(teacherOptsHtml, role){
+function openMaterialModal(role){
+  const teacherOptsHtml = DB.teachers.map(t=>`<option value="${t.id}">${teacherName(t.id)}</option>`).join('');
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.innerHTML = `
@@ -2952,11 +2992,12 @@ function renderHomework(u){
   return `
     <div class="topbar">
       <div><h1>Uy vazifalari</h1></div>
-      <button class="btn gold" onclick="openHomeworkModal('${u.role}','${myTeacherId||''}','${teacherOpts.replace(/"/g,'&quot;')}')">+ Yangi vazifa</button>
+      <button class="btn gold" onclick="openHomeworkModal('${u.role}','${myTeacherId||''}')">+ Yangi vazifa</button>
     </div>
     ${cards || '<div class="card"><div class="empty">Hozircha vazifa yo\'q</div></div>'}`;
 }
-function openHomeworkModal(role, myTeacherId, teacherOptsHtml){
+function openHomeworkModal(role, myTeacherId){
+  const teacherOptsHtml = DB.teachers.map(tt=>`<option value="${tt.id}">${teacherName(tt.id)}</option>`).join('');
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.innerHTML = `
@@ -3041,7 +3082,7 @@ function renderTests(u){
   return `
     <div class="topbar">
       <div><h1>Testlar</h1><p>Jami: ${list.length} ta</p></div>
-      <button class="btn gold" onclick="openTestModal('${u.role}','${myTeacherId||''}','${teacherOpts.replace(/"/g,'&quot;')}')">+ Yangi test</button>
+      <button class="btn gold" onclick="openTestModal('${u.role}','${myTeacherId||''}')">+ Yangi test</button>
     </div>
     <div class="card">
       <table>
@@ -3050,7 +3091,8 @@ function renderTests(u){
       </table>
     </div>`;
 }
-function openTestModal(role, myTeacherId, teacherOptsHtml){
+function openTestModal(role, myTeacherId){
+  const teacherOptsHtml = DB.teachers.map(tt=>`<option value="${tt.id}">${teacherName(tt.id)}</option>`).join('');
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.innerHTML = `
