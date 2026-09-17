@@ -490,7 +490,7 @@ const FIELD_MAP = {
   students: {userId:'user_id', teacherId:'teacher_id', parentPhone:'parent_phone', telegramChatId:'telegram_chat_id', scheduleSlotId:'schedule_slot_id'},
   schedule: {teacherId:'teacher_id'},
   attendance: {studentId:'student_id', tasksDone:'tasks_done'},
-  payments: {studentId:'student_id', paidUntil:'paid_until'},
+  payments: {studentId:'student_id', paidUntil:'paid_until', installmentPart:'installment_part', installmentTotal:'installment_total', nextInstallmentAmount:'next_installment_amount'},
   videos: {teacherId:'teacher_id'},
   materials: {teacherId:'teacher_id'},
   announcements: {authorId:'author_id'},
@@ -1212,6 +1212,8 @@ function openTeacherModal(editId){
     <div class="modal">
       <h3>${t ? 'O\'qituvchini tahrirlash' : 'Yangi o\'qituvchi'}</h3>
       <label>To'liq ism</label><input type="text" id="t-name" value="${u?u.name.replace(/"/g,'&quot;'):''}" ${t?'disabled style="opacity:.6;"':''}>
+      ${t ? `<label>Login</label><input type="text" value="${u?u.username:''}" disabled style="opacity:.7;">
+      <label>Yangi parol o'rnatish (bo'sh qoldirsangiz o'zgarmaydi)</label><input type="text" id="t-new-password" placeholder="Yangi parol...">` : ''}
       <label>Jinsi</label>
       <select id="t-gender">
         <option value="male" ${(!t || t.gender==='male' || !t.gender)?'selected':''}>O'g'il bola</option>
@@ -1259,6 +1261,11 @@ async function saveTeacher(editId){
       await updateRow('teachers', editId, commonFields);
       const t = DB.teachers.find(x=>x.id===editId);
       Object.assign(t, commonFields);
+      const newPassword = document.getElementById('t-new-password').value.trim();
+      if(newPassword){
+        if(newPassword.length < 4){ err.textContent = 'Yangi parol kamida 4 belgidan iborat bo\'lsin.'; return; }
+        await updateRow('users', t.userId, {password:newPassword});
+      }
     }catch(e){
       err.textContent = 'Xatolik yuz berdi.'; console.error(e); return;
     }
@@ -1450,6 +1457,8 @@ function openStudentEditModal(studentId){
   bg.innerHTML = `
     <div class="modal">
       <h3>Tahrirlash — ${u?u.name:''}</h3>
+      <label>Login</label><input type="text" value="${u?u.username:''}" disabled style="opacity:.7;">
+      <label>Yangi parol o'rnatish (bo'sh qoldirsangiz o'zgarmaydi)</label><input type="text" id="se-new-password" placeholder="Yangi parol...">
       <label>O'qituvchi</label>
       <select id="se-teacher" onchange="onTeacherSelectChange('se-teacher','se-schedule')"><option value="">— tanlang —</option>${teacherOpts}</select>
       <label>Dars vaqti</label>
@@ -1478,11 +1487,16 @@ async function saveStudentEdit(studentId){
   const level = document.getElementById('se-level').value;
   const parentPhone = document.getElementById('se-parent-phone').value.trim();
   const telegramChatId = document.getElementById('se-telegram').value.trim();
+  const newPassword = document.getElementById('se-new-password').value.trim();
   const err = document.getElementById('se-err');
   try{
     await updateRow('students', studentId, {group, teacherId, level, parentPhone, telegramChatId, scheduleSlotId});
     const s = DB.students.find(x=>x.id===studentId);
     if(s) Object.assign(s, {group, teacherId, level, parentPhone, telegramChatId, scheduleSlotId});
+    if(newPassword && s){
+      if(newPassword.length < 4){ err.textContent = 'Yangi parol kamida 4 belgidan iborat bo\'lsin.'; return; }
+      await updateRow('users', s.userId, {password:newPassword});
+    }
   }catch(e){
     err.textContent = 'Xatolik yuz berdi.'; console.error(e); return;
   }
@@ -2264,7 +2278,14 @@ function getPaymentStatus(studentId){
   if(recs.length===0) return {ok:false, label:'To\'lov qilinmagan'};
   const last = recs[0];
   const ok = last.paidUntil >= todayStr();
-  return {ok, label: ok ? `${last.paidUntil} gacha to'langan` : `Muddati o'tgan (${last.paidUntil})`};
+  const pendingInstallment = (ok && last.installmentPart===1 && last.installmentTotal===2)
+    ? `Kutilmoqda: ${Number(last.nextInstallmentAmount).toLocaleString()} so'm — ${last.paidUntil} gacha`
+    : null;
+  return {
+    ok,
+    label: ok ? `${last.paidUntil} gacha to'langan` : `Muddati o'tgan (${last.paidUntil})`,
+    pendingInstallment
+  };
 }
 function renderPayments(u){
   const isAdmin = u.role==='admin';
@@ -2281,7 +2302,7 @@ function renderPayments(u){
       <td>${su?su.name:'—'}</td>
       <td>${s.group||'—'}</td>
       ${isAdmin?`<td>${teacherName(s.teacherId)}</td>`:''}
-      <td><span class="pill ${pay.ok?'green':'rose'}">${pay.label}</span></td>
+      <td><span class="pill ${pay.ok?'green':'rose'}">${pay.label}</span>${pay.pendingInstallment?`<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">⏳ ${pay.pendingInstallment}</div>`:''}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap;">
         ${payBtn}
         <button class="btn sm outline" onclick="showPaymentHistoryModal('${s.id}', '${nameEsc}')">🕘 Tarix</button>
@@ -2306,10 +2327,26 @@ function openPaymentModal(studentId, studentName){
   bg.innerHTML = `
     <div class="modal">
       <h3>To'lov qo'shish — ${studentName}</h3>
-      <label>Summa (so'm)</label><input type="number" id="p-amount" min="0" oninput="updatePaymentSplitPreview()">
-      <div id="p-split-preview" style="font-size:12.5px;color:var(--text-dim);margin-top:-8px;margin-bottom:10px;"></div>
-      <label>To'lov sanasi</label><input type="date" id="p-date" value="${todayStr()}">
-      <label>Qaysi sanagacha amal qiladi</label><input type="date" id="p-until">
+      <label style="display:flex;align-items:center;gap:8px;font-weight:normal;">
+        <input type="checkbox" id="p-split" onchange="togglePaymentSplit()" style="width:auto;"> Ikkiga bo'lib to'lash
+      </label>
+      <div id="p-single-block">
+        <label>Summa (so'm)</label><input type="number" id="p-amount" min="0" oninput="updatePaymentSplitPreview()">
+        <div id="p-split-preview" style="font-size:12.5px;color:var(--text-dim);margin-top:-8px;margin-bottom:10px;"></div>
+        <label>To'lov sanasi</label><input type="date" id="p-date" value="${todayStr()}">
+        <label>Qaysi sanagacha amal qiladi</label><input type="date" id="p-until">
+      </div>
+      <div id="p-split-block" style="display:none;">
+        <div class="card" style="background:var(--bg-soft);margin-bottom:10px;">
+          <label>1-qism summasi (hozir to'lanmoqda)</label><input type="number" id="p-amount1" min="0">
+          <label>1-qism to'lov sanasi</label><input type="date" id="p-date1" value="${todayStr()}">
+        </div>
+        <div class="card" style="background:var(--bg-soft);">
+          <label>2-qism summasi</label><input type="number" id="p-amount2" min="0">
+          <label>2-qismni qachongacha to'lashi kerak</label><input type="date" id="p-date2">
+        </div>
+        <div class="hint">2-qism ko'rsatilgan sanagacha to'lanmasa, o'quvchi holati "Muddati o'tgan" deb ko'rsatiladi va yangi to'lov kiritish uchun qayta ochiladi.</div>
+      </div>
       <div class="err" id="p-err"></div>
       <div class="modal-actions">
         <button class="btn outline" onclick="this.closest('.modal-bg').remove()">Bekor qilish</button>
@@ -2317,6 +2354,11 @@ function openPaymentModal(studentId, studentName){
       </div>
     </div>`;
   document.body.appendChild(bg);
+}
+function togglePaymentSplit(){
+  const split = document.getElementById('p-split').checked;
+  document.getElementById('p-single-block').style.display = split ? 'none' : '';
+  document.getElementById('p-split-block').style.display = split ? '' : 'none';
 }
 function updatePaymentSplitPreview(){
   const el = document.getElementById('p-split-preview');
@@ -2329,7 +2371,7 @@ function showPaymentHistoryModal(studentId, studentName){
   const recs = DB.payments.filter(p=>p.studentId===studentId).sort((a,b)=>b.date.localeCompare(a.date));
   const rows = recs.map(p=>`<tr>
     <td>${p.date}</td>
-    <td>${Number(p.amount).toLocaleString()} so'm</td>
+    <td>${Number(p.amount).toLocaleString()} so'm${p.installmentPart?` (1/2-qism)`:''}</td>
     <td>${p.paidUntil} gacha</td>
   </tr>`).join('');
   const bg = document.createElement('div');
@@ -2348,9 +2390,7 @@ function showPaymentHistoryModal(studentId, studentName){
   document.body.appendChild(bg);
 }
 async function savePayment(studentId){
-  const amount = document.getElementById('p-amount').value;
-  const date = document.getElementById('p-date').value;
-  const paidUntil = document.getElementById('p-until').value;
+  const isSplit = document.getElementById('p-split').checked;
   const err = document.getElementById('p-err');
   const btn = document.getElementById('p-save-btn');
   if(btn.disabled) return;
@@ -2359,19 +2399,31 @@ async function savePayment(studentId){
     err.textContent = `Bu o'quvchi ${currentStatus.label.replace(' gacha to\'langan','')} gacha to'lagan — yangi to'lov muddat tugagach kiritiladi.`;
     return;
   }
-  if(!amount || !date || !paidUntil){ err.textContent = 'Barcha maydonlarni to\'ldiring.'; return; }
+  let paymentToInsert;
+  if(isSplit){
+    const amount1 = document.getElementById('p-amount1').value;
+    const date1 = document.getElementById('p-date1').value;
+    const amount2 = document.getElementById('p-amount2').value;
+    const date2 = document.getElementById('p-date2').value;
+    if(!amount1 || !date1 || !amount2 || !date2){ err.textContent = 'Barcha maydonlarni to\'ldiring.'; return; }
+    if(date2 <= date1){ err.textContent = '2-qism sanasi 1-qismdan keyin bo\'lishi kerak.'; return; }
+    paymentToInsert = {studentId, amount:Number(amount1), date:date1, paidUntil:date2, installmentPart:1, installmentTotal:2, nextInstallmentAmount:Number(amount2)};
+  }else{
+    const amount = document.getElementById('p-amount').value;
+    const date = document.getElementById('p-date').value;
+    const paidUntil = document.getElementById('p-until').value;
+    if(!amount || !date || !paidUntil){ err.textContent = 'Barcha maydonlarni to\'ldiring.'; return; }
+    paymentToInsert = {studentId, amount:Number(amount), date, paidUntil};
+  }
   btn.disabled = true; btn.textContent = 'Saqlanmoqda...';
   try{
-    const prevStatus = getPaymentStatus(studentId);
-    const newPay = await insertRow('payments', {studentId, amount:Number(amount), date, paidUntil});
+    const newPay = await insertRow('payments', paymentToInsert);
     DB.payments.push(newPay);
-    if(prevStatus.ok || DB.payments.filter(p=>p.studentId===studentId).length===1){
-      const s = DB.students.find(x=>x.id===studentId);
-      if(s){
-        const newCoins = (s.coins||0) + 10;
-        await updateRow('students', s.id, {coins:newCoins});
-        s.coins = newCoins;
-      }
+    const s = DB.students.find(x=>x.id===studentId);
+    if(s){
+      const newCoins = (s.coins||0) + 10;
+      await updateRow('students', s.id, {coins:newCoins});
+      s.coins = newCoins;
     }
   }catch(e){
     err.textContent = 'Xatolik yuz berdi.'; console.error(e);
