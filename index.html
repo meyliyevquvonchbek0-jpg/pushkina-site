@@ -2437,7 +2437,7 @@ function renderPayments(u){
     const su = DB.users.find(x=>x.id===s.userId);
     const pay = getPaymentStatus(s.id);
     const nameEsc = (su?su.name:'').replace(/'/g,"\\'");
-    const payBtn = pay.ok
+    const payBtn = (pay.ok && !pay.pendingInstallment)
       ? `<button class="btn sm outline" disabled title="Muddati tugamaguncha yangi to'lov kiritilmaydi" style="opacity:.5;cursor:not-allowed;">🔒 To'lov qo'shish</button>`
       : `<button class="btn sm outline" onclick="openPaymentModal('${s.id}', '${nameEsc}')">To'lov qo'shish</button>`;
     return `<tr>
@@ -2537,7 +2537,7 @@ async function savePayment(studentId){
   const btn = document.getElementById('p-save-btn');
   if(btn.disabled) return;
   const currentStatus = getPaymentStatus(studentId);
-  if(currentStatus.ok){
+  if(currentStatus.ok && !currentStatus.pendingInstallment){
     err.textContent = `Bu o'quvchi ${currentStatus.label.replace(' gacha to\'langan','')} gacha to'lagan — yangi to'lov muddat tugagach kiritiladi.`;
     return;
   }
