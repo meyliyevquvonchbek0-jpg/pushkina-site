@@ -1319,17 +1319,23 @@ function goto_(tab){ activeTab = tab; persistTab(tab); renderNav(); renderMain()
 
 /* ============ TEACHERS (admin) ============ */
 function renderTeachers(){
-  const rows = DB.teachers.map(t=>{
-    const u = DB.users.find(x=>x.id===t.userId) || {name:'—', username:''};
+  const rows = DB.teachers.map(tc=>{
+    const u = DB.users.find(x=>x.id===tc.userId) || {name:'—', username:''};
+    const myStudents = DB.students.filter(s=>s.teacherId===tc.id);
+    const activeCount = myStudents.filter(s=>!s.frozen).length;
+    const frozenCount = myStudents.filter(s=>s.frozen).length;
     return `<tr>
-      <td style="display:flex;align-items:center;gap:8px;">${genderAvatar(t.gender)} ${u.name}</td>
-      <td>${t.subject}</td>
-      <td>${t.experience} yil</td>
-      <td>${t.phone||'—'}</td>
+      <td style="display:flex;align-items:center;gap:8px;">${genderAvatar(tc.gender)} ${u.name}</td>
+      <td>${tc.subject}</td>
+      <td>${tc.experience} yil</td>
+      <td>${tc.phone||'—'}</td>
       <td>${u.username}</td>
       <td>
-        <button class="icon-btn" onclick="openTeacherModal('${t.id}')">Tahrirlash</button>
-        <button class="icon-btn rose" onclick="deleteTeacher('${t.id}')">O'chirish</button>
+        <button class="btn sm outline" onclick="openTeacherStatsModal('${tc.id}')">${activeCount} ta o'quvchi${frozenCount?` (+${frozenCount} ❄️)`:''}</button>
+      </td>
+      <td>
+        <button class="icon-btn" onclick="openTeacherModal('${tc.id}')">Tahrirlash</button>
+        <button class="icon-btn rose" onclick="deleteTeacher('${tc.id}')">O'chirish</button>
       </td>
     </tr>`;
   }).join('');
@@ -1340,10 +1346,49 @@ function renderTeachers(){
     </div>
     <div class="card">
       <table>
-        <thead><tr><th>Ism</th><th>Fan</th><th>Tajriba</th><th>Telefon</th><th>Login</th><th></th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="6" class="empty">Hozircha o\'qituvchi yo\'q</td></tr>'}</tbody>
+        <thead><tr><th>Ism</th><th>Fan</th><th>Tajriba</th><th>Telefon</th><th>Login</th><th>O'quvchilar</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="7" class="empty">Hozircha o\'qituvchi yo\'q</td></tr>'}</tbody>
       </table>
     </div>`;
+}
+function openTeacherStatsModal(teacherId){
+  const tc = DB.teachers.find(x=>x.id===teacherId);
+  if(!tc) return;
+  const u = DB.users.find(x=>x.id===tc.userId);
+  const myStudents = DB.students.filter(s=>s.teacherId===teacherId);
+  const activeStudents = myStudents.filter(s=>!s.frozen);
+  const frozenStudents = myStudents.filter(s=>s.frozen);
+  const myStudentIds = myStudents.map(s=>s.id);
+  const totalPaid = DB.payments.filter(p=>myStudentIds.includes(p.studentId)).reduce((sum,p)=>sum+Number(p.amount||0),0);
+  const paidCount = activeStudents.filter(s=>getPaymentStatus(s.id).ok).length;
+  const rows = myStudents.map(s=>{
+    const su = DB.users.find(x=>x.id===s.userId);
+    const pay = getPaymentStatus(s.id);
+    return `<tr ${s.frozen?'style="opacity:.5;"':''}>
+      <td>${su?su.name:'—'}${s.frozen?' ❄️':''}</td>
+      <td>${s.group||'—'}</td>
+      <td><span class="pill ${pay.ok?'green':'rose'}">${pay.label}</span></td>
+    </tr>`;
+  }).join('');
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>${genderAvatar(tc.gender)} ${u?u.name:'—'} — ${tc.subject}</h3>
+      <div class="grid cols-3" style="margin-bottom:14px;">
+        <div class="metric"><div class="lbl">Faol o'quvchilar</div><div class="val">${activeStudents.length}</div></div>
+        <div class="metric"><div class="lbl">Muzlatilgan</div><div class="val">${frozenStudents.length}</div></div>
+        <div class="metric"><div class="lbl">Jami to'lov</div><div class="val" style="font-size:16px;">${totalPaid.toLocaleString()} so'm</div></div>
+      </div>
+      <table>
+        <thead><tr><th>Ism</th><th>Guruh</th><th>To'lov holati</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="3" class="empty">O\'quvchi yo\'q</td></tr>'}</tbody>
+      </table>
+      <div class="modal-actions" style="margin-top:14px;">
+        <button class="btn outline" onclick="this.closest('.modal-bg').remove()">Yopish</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
 }
 function openTeacherModal(editId){
   const t = editId ? DB.teachers.find(x=>x.id===editId) : null;
@@ -1490,8 +1535,8 @@ function renderStudents(){
     const t = DB.teachers.find(x=>x.id===s.teacherId);
     const tu = t ? DB.users.find(x=>x.id===t.userId) : null;
     const pay = getPaymentStatus(s.id);
-    return `<tr>
-      <td>${u.name}</td>
+    return `<tr ${s.frozen?'style="opacity:.55;"':''}>
+      <td>${u.name}${s.frozen?' <span class="pill gray">❄️ Muzlatilgan</span>':''}</td>
       <td>${s.group||'—'}</td>
       <td>${s.level||'—'}</td>
       <td>${tu?tu.name:'—'}</td>
@@ -1499,8 +1544,9 @@ function renderStudents(){
       <td>${s.parentPhone||'—'}</td>
       <td><span class="pill ${pay.ok?'green':'rose'}">${pay.label}</span></td>
       <td>${s.coins||0} 🪙</td>
-      <td>
+      <td style="display:flex;gap:4px;flex-wrap:wrap;">
         <button class="icon-btn" onclick="openStudentEditModal('${s.id}')">Tahrirlash</button>
+        <button class="icon-btn ${s.frozen?'':'rose'}" onclick="toggleStudentFreeze('${s.id}')">${s.frozen?"🔓 Tiklash":"❄️ Muzlatish"}</button>
         <button class="icon-btn rose" onclick="deleteStudent('${s.id}')">O'chirish</button>
       </td>
     </tr>`;
@@ -1643,6 +1689,18 @@ async function saveStudentEdit(studentId){
     err.textContent = 'Xatolik yuz berdi.'; console.error(e); return;
   }
   document.querySelector('.modal-bg').remove();
+  renderMain();
+}
+async function toggleStudentFreeze(id){
+  const s = DB.students.find(x=>x.id===id);
+  if(!s) return;
+  const newFrozen = !s.frozen;
+  try{
+    await updateRow('students', id, {frozen:newFrozen});
+    s.frozen = newFrozen;
+  }catch(e){
+    alert('Xatolik yuz berdi.'); console.error(e); return;
+  }
   renderMain();
 }
 async function deleteStudent(id){
@@ -2107,12 +2165,12 @@ function renderAttendance(u){
   if(!attendanceCalendarMonth) attendanceCalendarMonth = todayStr().slice(0,7);
   const today = todayStr();
   const isEditable = selectedAttendanceDate <= today;
-  let pool = DB.students;
+  let pool = DB.students.filter(s=>!s.frozen);
   let myTeacherId = null;
   if(u.role==='teacher'){
     const t = DB.teachers.find(x=>x.userId===u.id);
     myTeacherId = t ? t.id : null;
-    pool = DB.students.filter(s=>s.teacherId===myTeacherId);
+    pool = pool.filter(s=>s.teacherId===myTeacherId);
   }
   const relevantSlots = (u.role==='teacher')
     ? DB.schedule.filter(sl=>sl.teacherId===myTeacherId)
