@@ -2,7 +2,13 @@
   "name": "pushkina-site",
   "version": "1.0.0",
   "private": true,
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "mammoth": "^1.7.2",
+    "pdf-parse": "^1.1.1"
+  },
   "scripts": {
-    "start": "npx serve -s . -l $PORT"
+    "start": "node server.js"
   }
 }
