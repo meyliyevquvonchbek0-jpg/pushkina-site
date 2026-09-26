@@ -27,6 +27,23 @@
     --radius:10px;
     font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   }
+  :root[data-theme="dark"]{
+    --ink:#E7E9EE;
+    --ink-2:#C7CCDA;
+    --paper:#12161F;
+    --card:#1C212E;
+    --gold:#D4AF37;
+    --gold-dark:#E8C766;
+    --rose:#E0776F;
+    --rose-bg:#3A2323;
+    --green:#5FAE81;
+    --green-bg:#1E3328;
+    --border:#2A2F3D;
+    --text-dim:#9AA1B0;
+  }
+  :root[data-theme="dark"] .video-card, :root[data-theme="dark"] .course-card{ background:var(--card); }
+  :root[data-theme="dark"] input, :root[data-theme="dark"] select, :root[data-theme="dark"] textarea{ background:#151A24; color:var(--ink); border-color:var(--border); }
+  :root[data-theme="dark"] .btn.outline{ color:var(--ink); }
   *{box-sizing:border-box;}
   body{
     margin:0;
@@ -398,6 +415,7 @@
     </div>
     <div class="landing-actions">
       <div class="lang-switcher-slot" data-compact="1" style="margin-right:8px;"></div>
+      <div class="theme-toggle-slot" style="margin-right:8px;"></div>
       <button class="btn outline sm" id="landing-kirish-btn" onclick="showLogin()">Kirish</button>
       <button class="btn gold sm" id="landing-royxat-btn" onclick="openRegisterModal()">Ro'yxatdan o'tish</button>
     </div>
@@ -477,6 +495,7 @@
       <div class="name" id="cur-user-name">—</div>
       <div class="role" id="cur-user-role">—</div>
       <div class="lang-switcher-slot" data-compact="1" style="margin-bottom:8px;"></div>
+      <div class="theme-toggle-slot" style="margin-bottom:8px;"></div>
       <button class="btn gold sm" style="width:100%;margin-bottom:6px;" onclick="openChangePasswordModal()">Profil sozlamalari</button>
       <button class="btn danger sm" style="width:100%;" onclick="handleLogout()">Chiqish</button>
     </div>
@@ -496,6 +515,8 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const FIELD_MAP = {
   teachers: {userId:'user_id', certificateUrl:'certificate_url', highlightUrl:'highlight_url', isLive:'is_live', totalStudentsTaught:'total_students_taught', certificateLevel:'certificate_level', faceDescriptor:'face_descriptor', telegramChatId:'telegram_chat_id'},
+  teacher_ratings: {teacherId:'teacher_id', studentId:'student_id'},
+  daily_words: {},
   teacher_checkins: {teacherId:'teacher_id', distanceMeters:'distance_meters'},
   flashcard_sets: {teacherId:'teacher_id'},
   students: {userId:'user_id', teacherId:'teacher_id', parentPhone:'parent_phone', telegramChatId:'telegram_chat_id', scheduleSlotId:'schedule_slot_id'},
@@ -613,7 +634,9 @@ let DB = {
   dailyTotals: [],
   nazoratScores: [],
   teacherCheckins: [],
-  flashcardSets: []
+  flashcardSets: [],
+  teacherRatings: [],
+  dailyWords: []
 };
 let deferredInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', (e)=>{
@@ -709,6 +732,21 @@ const TR = {
     "Tillarni biz bilan o'rganing":"Learn languages with us"
   }
 };
+let currentTheme = 'light';
+try{ currentTheme = localStorage.getItem('pushkina_theme') || 'light'; }catch(e){}
+document.documentElement.setAttribute('data-theme', currentTheme);
+function toggleTheme(){
+  currentTheme = currentTheme==='dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', currentTheme);
+  try{ localStorage.setItem('pushkina_theme', currentTheme); }catch(e){}
+  renderThemeToggles();
+}
+function themeToggleHtml(){
+  return `<button class="btn outline sm" style="padding:6px 10px;min-width:auto;" onclick="toggleTheme()" title="Tungi rejim">${currentTheme==='dark'?'☀️':'🌙'}</button>`;
+}
+function renderThemeToggles(){
+  document.querySelectorAll('.theme-toggle-slot').forEach(el=>{ el.innerHTML = themeToggleHtml(); });
+}
 let currentLang = 'uz';
 try{ currentLang = localStorage.getItem('pushkina_lang') || 'uz'; }catch(e){}
 function t(text){
@@ -759,7 +797,7 @@ async function boot(){
       users, teachers, students, schedule, attendance, payments, videos,
       materials, announcements, ratings, settingsRows, tests, testQuestions,
       testAttempts, homework, homeworkStatus, rewards, rewardRequests,
-      reviews, dailyTotals, nazoratScores, teacherCheckins, flashcardSets
+      reviews, dailyTotals, nazoratScores, teacherCheckins, flashcardSets, teacherRatings, dailyWords
     ] = await Promise.all([
       fetchTable('users_public'), fetchTable('teachers'), fetchTable('students'),
       fetchTable('schedule'), fetchTable('attendance'), fetchTable('payments'),
@@ -768,7 +806,8 @@ async function boot(){
       fetchTable('test_questions'), fetchTable('test_attempts'), fetchTable('homework'),
       fetchTable('homework_status'), fetchTable('rewards'), fetchTable('reward_requests'),
       fetchTable('reviews'), fetchTable('daily_totals'), fetchTable('nazorat_scores'),
-      fetchTable('teacher_checkins'), fetchTable('flashcard_sets')
+      fetchTable('teacher_checkins'), fetchTable('flashcard_sets'), fetchTable('teacher_ratings'),
+      fetchTable('daily_words')
     ]);
     DB.users = users; DB.teachers = teachers; DB.students = students;
     DB.schedule = schedule; DB.attendance = attendance; DB.payments = payments;
@@ -780,9 +819,12 @@ async function boot(){
     DB.rewardRequests = rewardRequests; DB.reviews = reviews; DB.dailyTotals = dailyTotals;
     DB.nazoratScores = nazoratScores; DB.teacherCheckins = teacherCheckins;
     DB.flashcardSets = flashcardSets;
+    DB.teacherRatings = teacherRatings;
+    DB.dailyWords = dailyWords;
     try{ renderSocialFloat(); }catch(e){ console.error('renderSocialFloat error', e); }
     try{ renderLandingContent(); }catch(e){ console.error('renderLandingContent error', e); }
     try{ renderLangSwitchers(); }catch(e){ console.error('renderLangSwitchers error', e); }
+    try{ renderThemeToggles(); }catch(e){ console.error('renderThemeToggles error', e); }
     const bootLoader = document.getElementById('boot-loader');
     try{
       const saved = localStorage.getItem('pushkina_session');
@@ -1530,6 +1572,7 @@ const NAV = {
     {id:'schedule', label:'Dars jadvali', icon:'▦'},
     {id:'attendance', label:'Davomat', icon:'✓'},
     {id:'teacher-checkins', label:'O\'qituvchi davomati (yuz)', icon:'📸'},
+    {id:'broadcast', label:'📢 Shoshilinch xabar', icon:'📢'},
     {id:'flashcards', label:'Flashcardlar', icon:'🗂'},
     {id:'payments', label:'To\'lovlar', icon:'₪'},
     {id:'videos', label:'Video darslar', icon:'▶'},
@@ -1626,6 +1669,7 @@ function renderMain(){
   else if(activeTab==='ai-chat') html = renderAiChat(u);
   else if(activeTab==='face-checkin') html = renderFaceCheckin(u);
   else if(activeTab==='teacher-checkins') html = renderTeacherCheckinsLog();
+  else if(activeTab==='broadcast') html = renderBroadcast();
   else if(activeTab==='flashcards') html = renderFlashcards(u);
   else if(activeTab==='teacher-info') html = renderTeacherInfo(u);
   else if(activeTab==='translator') html = renderTranslator();
@@ -1706,7 +1750,7 @@ function renderHome(u){
           <button class="btn outline sm" onclick="goto_('payments')">To'lov qayd etish</button>
         </div>
       </div>
-      ${renderAnnouncementsBlock(u)}`;
+      ${renderAnnouncementsBlock(u)}${dailyWordCardHtml()}`;
   }
   if(u.role==='teacher'){
     const t = DB.teachers.find(x=>x.userId===u.id);
@@ -1720,7 +1764,7 @@ function renderHome(u){
         <div class="metric"><div class="lbl">Haftalik darslar</div><div class="val">${mySlots.length}</div></div>
         <div class="metric"><div class="lbl">Bu oygi ulushim</div><div class="val gold">${earnings.share.toLocaleString()} so'm</div></div>
       </div>
-      ${renderAnnouncementsBlock(u)}`;
+      ${renderAnnouncementsBlock(u)}${dailyWordCardHtml()}`;
   }
   // student
   const s = DB.students.find(x=>x.userId===u.id);
@@ -1731,7 +1775,22 @@ function renderHome(u){
       <div class="metric"><div class="lbl">To'lov holati</div><div class="val ${paid.ok?'green':'rose'}">${paid.label}</div></div>
       <div class="metric"><div class="lbl">Coinlarim</div><div class="val gold">${s?s.coins||0:0} 🪙</div></div>
     </div>
-    ${renderAnnouncementsBlock(u)}`;
+    ${renderAnnouncementsBlock(u)}${dailyWordCardHtml()}`;
+}
+function dailyWordCardHtml(){
+  if(!DB.dailyWords || !DB.dailyWords.length) return '';
+  const epoch = new Date('2026-01-01');
+  const today = new Date(todayStr());
+  const daysSince = Math.floor((today - epoch) / 86400000);
+  const idx = ((daysSince % DB.dailyWords.length) + DB.dailyWords.length) % DB.dailyWords.length;
+  const w = DB.dailyWords[idx];
+  if(!w) return '';
+  return `
+    <div class="card" style="background:linear-gradient(135deg,var(--gold) 0%,var(--gold-dark) 100%);color:#fff;margin-top:16px;">
+      <div style="font-size:12px;opacity:.85;margin-bottom:6px;">📖 Kunning so'zi</div>
+      <div style="font-size:20px;font-weight:700;margin-bottom:4px;">${w.word}</div>
+      <div style="font-size:14.5px;opacity:.95;">${w.meaning}</div>
+    </div>`;
 }
 function goto_(tab){ activeTab = tab; persistTab(tab); renderNav(); renderMain(); }
 
@@ -1788,6 +1847,8 @@ function openTeacherStatsModal(teacherId){
       <td><span class="pill ${pay.ok?'green':'rose'}">${pay.label}</span></td>
     </tr>`;
   }).join('');
+  const myRatings = DB.teacherRatings.filter(r=>r.teacherId===teacherId);
+  const avgRating = myRatings.length ? (myRatings.reduce((s,r)=>s+Number(r.rating||0),0)/myRatings.length) : null;
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.innerHTML = `
@@ -1798,6 +1859,7 @@ function openTeacherStatsModal(teacherId){
         <div class="metric"><div class="lbl">Muzlatilgan</div><div class="val">${frozenStudents.length}</div></div>
         <div class="metric"><div class="lbl">Jami to'lov</div><div class="val" style="font-size:16px;">${totalPaid.toLocaleString()} so'm</div></div>
       </div>
+      <div class="metric" style="margin-bottom:14px;"><div class="lbl">O'quvchilar bahosi (anonim, ${myRatings.length} ta ovoz)</div><div class="val">${avgRating!=null ? avgRating.toFixed(1)+' ★' : 'Hali baho yo\'q'}</div></div>
       <table>
         <thead><tr><th>Ism</th><th>Guruh</th><th>To'lov holati</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="3" class="empty">O\'quvchi yo\'q</td></tr>'}</tbody>
@@ -3345,6 +3407,64 @@ function renderSalaries(){
     <div class="hint">Har bir to'lovning 50% avtomatik markazga, 50% o'sha o'quvchining o'qituvchisiga tegishli deb hisoblanadi. Masalan 500,000 so'm to'lansa: 250,000 so'm markazga, 250,000 so'm o'qituvchiga.</div>`;
 }
 
+/* ============ OMMAVIY SHOSHILINCH XABAR ============ */
+function renderBroadcast(){
+  return `
+    <div class="topbar"><div><h1>📢 Shoshilinch xabar</h1><p>Barchaga (yoki tanlangan guruhga) bir zumda yetkazish</p></div></div>
+    <div class="card" style="max-width:600px;">
+      <label>Kimga yuborilsin</label>
+      <select id="bc-target">
+        <option value="all">Hammaga (o'qituvchi + o'quvchi)</option>
+        <option value="teachers">Faqat o'qituvchilarga</option>
+        <option value="students">Faqat o'quvchilarga</option>
+      </select>
+      <label>Xabar matni</label>
+      <textarea id="bc-text" rows="5" placeholder="Masalan: Ertaga (5-oktabr) barcha darslar bekor qilinadi."></textarea>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:normal;">
+        <input type="checkbox" id="bc-also-announcement" checked style="width:auto;"> Sайт bosh sahifasidagi "E'lonlar"ga ham qo'shilsin
+      </label>
+      <div class="err" id="bc-err"></div>
+      <div id="bc-status" style="font-size:13px;color:var(--text-dim);margin:8px 0;"></div>
+      <button class="btn gold" onclick="sendBroadcast()">📢 Yuborish</button>
+    </div>`;
+}
+async function sendBroadcast(){
+  const target = document.getElementById('bc-target').value;
+  const text = document.getElementById('bc-text').value.trim();
+  const alsoAnnouncement = document.getElementById('bc-also-announcement').checked;
+  const err = document.getElementById('bc-err');
+  const status = document.getElementById('bc-status');
+  err.textContent = '';
+  if(!text){ err.textContent = 'Xabar matnini kiriting.'; return; }
+  if(!DB.settings.telegramBotToken){ err.textContent = 'Avval "Sozlamalar"da Telegram bot tokenini kiriting.'; return; }
+  if(!confirm(`Bu xabar ${target==='all'?'BARCHA':target==='teachers'?'BARCHA O\'QITUVCHI':'BARCHA O\'QUVCHI'}larga yuboriladi. Davom etamizmi?`)) return;
+
+  let recipients = [];
+  if(target==='all' || target==='teachers'){
+    recipients = recipients.concat(DB.teachers.filter(t=>t.telegramChatId).map(t=>t.telegramChatId));
+  }
+  if(target==='all' || target==='students'){
+    recipients = recipients.concat(DB.students.filter(s=>s.telegramChatId).map(s=>s.telegramChatId));
+  }
+  recipients = [...new Set(recipients)];
+  status.textContent = `Yuborilmoqda... (0/${recipients.length})`;
+  let sent = 0, failed = 0;
+  for(const chatId of recipients){
+    const res = await sendTelegramMessage(chatId, `📢 ${text}`);
+    if(res && res.ok) sent++; else failed++;
+    status.textContent = `Yuborilmoqda... (${sent+failed}/${recipients.length})`;
+    await new Promise(r=>setTimeout(r, 40));
+  }
+  if(alsoAnnouncement){
+    try{
+      const newAnn = await insertRow('announcements', {title:'📢 Muhim xabar', text, date:todayStr(), authorId:session.userId});
+      DB.announcements.push(newAnn);
+    }catch(e){ console.error(e); }
+  }
+  status.textContent = `✅ Yuborildi: ${sent} ta. ${failed?`❌ Xato: ${failed} ta.`:''}`;
+  document.getElementById('bc-text').value = '';
+}
+
 /* ============ TELEGRAM REMINDERS ============ */
 async function sendTelegramMessage(chatId, text){
   const token = DB.settings.telegramBotToken;
@@ -3477,7 +3597,40 @@ function renderSettings(){
       <input type="number" id="set-center-radius" min="20" value="${DB.settings.centerRadius||150}">
       <div class="err" id="set-center-err"></div>
       <button class="btn gold sm" style="margin-top:10px;" onclick="saveCenterRadius()">Radiusni saqlash</button>
+    </div>
+    <div class="card">
+      <h3>📖 Kunlik so'zlar/iboralar (${DB.dailyWords.length} ta)</h3>
+      <p style="font-size:12.5px;color:var(--text-dim);margin:-6px 0 14px;">Bosh sahifada har kuni navbat bilan bittasi avtomatik ko'rsatiladi.</p>
+      <label>So'z/ibora</label><input type="text" id="dw-word" placeholder="masalan: Здравствуйте">
+      <label>Ma'nosi</label><input type="text" id="dw-meaning" placeholder="masalan: Assalomu alaykum (rasmiy salomlashish)">
+      <button class="btn gold sm" style="margin-top:10px;" onclick="addDailyWord()">+ Qo'shish</button>
+      <div style="max-height:260px;overflow-y:auto;margin-top:16px;">
+        <table>
+          <thead><tr><th>So'z</th><th>Ma'nosi</th><th></th></tr></thead>
+          <tbody>${DB.dailyWords.map(w=>`<tr><td>${w.word}</td><td>${w.meaning}</td><td><button class="icon-btn rose" onclick="deleteDailyWord('${w.id}')">O'chirish</button></td></tr>`).join('') || '<tr><td colspan="3" class="empty">Hali so\'z qo\'shilmagan</td></tr>'}</tbody>
+        </table>
+      </div>
     </div>`;
+}
+async function addDailyWord(){
+  const word = document.getElementById('dw-word').value.trim();
+  const meaning = document.getElementById('dw-meaning').value.trim();
+  if(!word || !meaning){ alert("So'z va ma'nosini kiriting."); return; }
+  try{
+    const newW = await insertRow('daily_words', {word, meaning});
+    DB.dailyWords.push(newW);
+    document.getElementById('dw-word').value = '';
+    document.getElementById('dw-meaning').value = '';
+    renderMain();
+  }catch(e){ console.error(e); alert('Xatolik yuz berdi.'); }
+}
+async function deleteDailyWord(id){
+  if(!confirm("Bu so'zni o'chirmoqchimisiz?")) return;
+  try{
+    await deleteRow('daily_words', id);
+    DB.dailyWords = DB.dailyWords.filter(x=>x.id!==id);
+    renderMain();
+  }catch(e){ console.error(e); alert('Xatolik yuz berdi.'); }
 }
 async function captureCenterLocation(){
   if(!navigator.geolocation){ alert("Brauzeringiz joylashuvni aniqlay olmaydi."); return; }
@@ -4384,8 +4537,20 @@ function renderMyReview(u){
     <td style="max-width:320px;">${r.text}</td>
     <td><span class="pill ${r.approved?'green':'gray'}">${r.approved?'Chop etilgan':'Ko\'rib chiqilmoqda'}</span></td>
   </tr>`).join('');
+  const s = DB.students.find(x=>x.userId===u.id);
+  const myRating = s ? DB.teacherRatings.find(r=>r.studentId===s.id && r.teacherId===s.teacherId) : null;
+  const teacherRatingBlock = (s && s.teacherId) ? `
+    <div class="card">
+      <h3>O'qituvchingizni baholang (anonim)</h3>
+      <p style="font-size:12.5px;color:var(--text-dim);margin:-6px 0 12px;">Bu baho o'qituvchiga emas, faqat administratsiyaga ko'rinadi. Ismingiz saqlanmaydi.</p>
+      <div style="display:flex;gap:6px;">
+        ${[1,2,3,4,5].map(n=>`<button type="button" class="btn ${(myRating&&myRating.rating>=n)?'gold':'outline'}" onclick="rateTeacher('${s.id}','${s.teacherId}',${n})" style="padding:8px 14px;">${n}★</button>`).join('')}
+      </div>
+      ${myRating ? `<div class="hint">Joriy bahoyingiz: ${myRating.rating} ★ (o'zgartirish uchun boshqa songa bosing)</div>` : ''}
+    </div>` : '';
   return `
     <div class="topbar"><div><h1>${t('Sharh qoldirish')}</h1><p>Sharhingiz administratsiya tomonidan tekshirilgach, bosh sahifada chop etiladi</p></div></div>
+    ${teacherRatingBlock}
     <div class="card">
       <label>Baho (1-10)</label>
       <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
@@ -4405,6 +4570,19 @@ function renderMyReview(u){
         <tbody>${rows}</tbody>
       </table>
     </div>` : ''}`;
+}
+async function rateTeacher(studentId, teacherId, rating){
+  const existing = DB.teacherRatings.find(r=>r.studentId===studentId && r.teacherId===teacherId);
+  try{
+    if(existing){
+      await updateRow('teacher_ratings', existing.id, {rating});
+      existing.rating = rating;
+    }else{
+      const newR = await insertRow('teacher_ratings', {teacherId, studentId, rating, date:todayStr()});
+      DB.teacherRatings.push(newR);
+    }
+    renderMain();
+  }catch(e){ console.error(e); alert('Xatolik yuz berdi.'); }
 }
 function setMyReviewRating(n){
   document.getElementById('my-rv-rating').value = n;
