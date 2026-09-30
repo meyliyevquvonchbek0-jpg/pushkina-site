@@ -491,6 +491,7 @@
         <span>Boshqaruv tizimi</span>
       </div>
     </div>
+    <div id="notif-bell-slot"></div>
     <div id="nav-list"></div>
     <div class="nav-spacer"></div>
     <div class="user-box">
@@ -519,6 +520,7 @@ const FIELD_MAP = {
   teachers: {userId:'user_id', certificateUrl:'certificate_url', highlightUrl:'highlight_url', isLive:'is_live', totalStudentsTaught:'total_students_taught', certificateLevel:'certificate_level', faceDescriptor:'face_descriptor', telegramChatId:'telegram_chat_id'},
   teacher_ratings: {teacherId:'teacher_id', studentId:'student_id'},
   daily_words: {},
+  bot_questions: {teacherMessageId:'teacher_message_id', teacherChatId:'teacher_chat_id', studentChatId:'student_chat_id', studentName:'student_name', createdAt:'created_at'},
   teacher_checkins: {teacherId:'teacher_id', distanceMeters:'distance_meters'},
   flashcard_sets: {teacherId:'teacher_id'},
   students: {userId:'user_id', teacherId:'teacher_id', parentPhone:'parent_phone', telegramChatId:'telegram_chat_id', scheduleSlotId:'schedule_slot_id'},
@@ -638,7 +640,8 @@ let DB = {
   teacherCheckins: [],
   flashcardSets: [],
   teacherRatings: [],
-  dailyWords: []
+  dailyWords: [],
+  botQuestions: []
 };
 let deferredInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', (e)=>{
@@ -799,7 +802,7 @@ async function boot(){
       users, teachers, students, schedule, attendance, payments, videos,
       materials, announcements, ratings, settingsRows, tests, testQuestions,
       testAttempts, homework, homeworkStatus, rewards, rewardRequests,
-      reviews, dailyTotals, nazoratScores, teacherCheckins, flashcardSets, teacherRatings, dailyWords
+      reviews, dailyTotals, nazoratScores, teacherCheckins, flashcardSets, teacherRatings, dailyWords, botQuestions
     ] = await Promise.all([
       fetchTable('users_public'), fetchTable('teachers'), fetchTable('students'),
       fetchTable('schedule'), fetchTable('attendance'), fetchTable('payments'),
@@ -809,7 +812,7 @@ async function boot(){
       fetchTable('homework_status'), fetchTable('rewards'), fetchTable('reward_requests'),
       fetchTable('reviews'), fetchTable('daily_totals'), fetchTable('nazorat_scores'),
       fetchTable('teacher_checkins'), fetchTable('flashcard_sets'), fetchTable('teacher_ratings'),
-      fetchTable('daily_words')
+      fetchTable('daily_words'), fetchTable('bot_questions')
     ]);
     DB.users = users; DB.teachers = teachers; DB.students = students;
     DB.schedule = schedule; DB.attendance = attendance; DB.payments = payments;
@@ -823,6 +826,7 @@ async function boot(){
     DB.flashcardSets = flashcardSets;
     DB.teacherRatings = teacherRatings;
     DB.dailyWords = dailyWords;
+    DB.botQuestions = botQuestions;
     try{ renderSocialFloat(); }catch(e){ console.error('renderSocialFloat error', e); }
     try{ renderLandingContent(); }catch(e){ console.error('renderLandingContent error', e); }
     try{ renderLangSwitchers(); }catch(e){ console.error('renderLangSwitchers error', e); }
@@ -969,8 +973,28 @@ async function rejectRequest(userId, btn){
     alert('Xatolik yuz berdi. Qayta urinib ko\'ring.');
   }
 }
+let requestsQuestionsTeacherFilter = null;
+function setRequestsQuestionsFilter(teacherId){
+  requestsQuestionsTeacherFilter = teacherId || null;
+  renderMain();
+}
+let requestsTeacherFilter = null;
+function setRequestsTeacherFilter(teacherId){
+  requestsTeacherFilter = teacherId || null;
+  renderMain();
+}
 function renderRequests(){
-  const pending = DB.users.filter(u=>u.role==='student' && u.status==='pending');
+  let pending = DB.users.filter(u=>u.role==='student' && u.status==='pending');
+  const teachersWithRequests = DB.teachers.filter(tc=>pending.some(u=>{
+    const s = DB.students.find(x=>x.userId===u.id);
+    return s && s.teacherId===tc.id;
+  }));
+  if(requestsTeacherFilter){
+    pending = pending.filter(u=>{
+      const s = DB.students.find(x=>x.userId===u.id);
+      return s && s.teacherId===requestsTeacherFilter;
+    });
+  }
   const rows = pending.map(u=>{
     const s = DB.students.find(x=>x.userId===u.id);
     return `<tr>
@@ -983,12 +1007,52 @@ function renderRequests(){
       </td>
     </tr>`;
   }).join('');
+  const teacherChips = teachersWithRequests.length ? `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      <button class="btn sm ${!requestsTeacherFilter?'gold':'outline'}" onclick="setRequestsTeacherFilter(null)">Barchasi</button>
+      ${teachersWithRequests.map(tc=>`<button class="btn sm ${requestsTeacherFilter===tc.id?'gold':'outline'}" onclick="setRequestsTeacherFilter('${tc.id}')">${teacherName(tc.id)}</button>`).join('')}
+    </div>` : '';
   return `
     <div class="topbar"><div><h1>${t('So\'rovlar')}</h1><p>Ro'yxatdan o'tish uchun kutayotgan o'quvchilar</p></div></div>
+    ${teacherChips}
     <div class="card">
       <table>
         <thead><tr><th>Ism</th><th>O'qituvchi</th><th>Login</th><th></th></tr></thead>
         <tbody>${rows || '<tr><td colspan="4" class="empty">Kutayotgan so\'rov yo\'q</td></tr>'}</tbody>
+      </table>
+    </div>`;
+}
+function renderBotQuestions(){
+  const teachersWithChat = DB.teachers.filter(tc=>tc.telegramChatId);
+  const teachersWithQuestions = teachersWithChat.filter(tc=>DB.botQuestions.some(q=>q.teacherChatId===tc.telegramChatId));
+  let questionList = DB.botQuestions.slice();
+  if(requestsQuestionsTeacherFilter){
+    const filterTeacher = DB.teachers.find(x=>x.id===requestsQuestionsTeacherFilter);
+    questionList = questionList.filter(q=>filterTeacher && q.teacherChatId===filterTeacher.telegramChatId);
+  }
+  questionList.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  const teacherChips = teachersWithQuestions.length ? `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      <button class="btn sm ${!requestsQuestionsTeacherFilter?'gold':'outline'}" onclick="setRequestsQuestionsFilter(null)">Barchasi</button>
+      ${teachersWithQuestions.map(tc=>`<button class="btn sm ${requestsQuestionsTeacherFilter===tc.id?'gold':'outline'}" onclick="setRequestsQuestionsFilter('${tc.id}')">${teacherName(tc.id)}</button>`).join('')}
+    </div>` : '';
+  const questionRows = questionList.map(q=>{
+    const tc = DB.teachers.find(x=>x.telegramChatId===q.teacherChatId);
+    return `<tr>
+      <td>${tc ? teacherName(tc.id) : '—'}</td>
+      <td>${q.studentName||'—'}</td>
+      <td style="max-width:260px;">${q.question||''}</td>
+      <td style="max-width:260px;">${q.answer || '<span style="color:var(--text-dim);">Hali javob berilmagan</span>'}</td>
+      <td><span class="pill ${q.answered?'green':'rose'}">${q.answered?"Javob berilgan":"Kutilmoqda"}</span></td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="topbar"><div><h1>🤖 Bot savollari</h1><p>O'qituvchilarga Telegram bot orqali yuborilgan savollar</p></div></div>
+    ${teacherChips}
+    <div class="card">
+      <table>
+        <thead><tr><th>O'qituvchi</th><th>O'quvchi</th><th>Savol</th><th>Javob</th><th>Holat</th></tr></thead>
+        <tbody>${questionRows || '<tr><td colspan="5" class="empty">Hali savol yo\'q</td></tr>'}</tbody>
       </table>
     </div>`;
 }
@@ -1574,6 +1638,8 @@ const NAV = {
     {id:'schedule', label:'Dars jadvali', icon:'▦'},
     {id:'attendance', label:'Davomat', icon:'✓'},
     {id:'broadcast', label:'📢 Shoshilinch xabar', icon:'📢'},
+    {id:'stats', label:'📊 Statistika', icon:'📊'},
+    {id:'bot-questions', label:'🤖 Bot savollari', icon:'🤖'},
     {id:'payments', label:'To\'lovlar', icon:'₪'},
     {id:'videos', label:'Video darslar', icon:'▶'},
     {id:'materials', label:'Materiallar', icon:'▤'},
@@ -1624,8 +1690,34 @@ const NAV = {
     {id:'translator', label:'Tarjimon', icon:'🌐'}
   ]
 };
+function renderNotifBell(){
+  const slot = document.getElementById('notif-bell-slot');
+  if(!slot || !session) return;
+  const u = curUser();
+  if(!u) return;
+  let count = 0;
+  let target = 'requests';
+  if(u.role==='admin'){
+    count += DB.users.filter(x=>x.role==='student' && x.status==='pending').length;
+    count += DB.reviews.filter(r=>!r.approved).length;
+    count += DB.rewardRequests.filter(r=>r.status==='pending').length;
+  }else if(u.role==='teacher'){
+    const tc = DB.teachers.find(x=>x.userId===u.id);
+    if(tc && tc.telegramChatId){
+      count = DB.botQuestions.filter(q=>q.teacherChatId===tc.telegramChatId && !q.answered).length;
+    }
+    target = 'home';
+  }
+  if(u.role==='student'){ slot.innerHTML=''; return; }
+  slot.innerHTML = `
+    <div onclick="goto_('${target}')" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 8px 16px;color:#D6D9EA;font-size:13px;">
+      <span style="position:relative;font-size:16px;">🔔${count>0?`<span style="position:absolute;top:-6px;right:-10px;background:var(--rose);color:#fff;font-size:10px;font-weight:700;border-radius:50%;min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 3px;">${count>99?'99+':count}</span>`:''}</span>
+      <span>${count>0 ? `${count} ta e'tibor talab qiladi` : 'Bildirishnoma yo\'q'}</span>
+    </div>`;
+}
 function renderNav(){
   const u = curUser();
+  renderNotifBell();
   const list = document.getElementById('nav-list');
   list.innerHTML = '';
   NAV[u.role].forEach(item=>{
@@ -1667,6 +1759,8 @@ function renderMain(){
   else if(activeTab==='face-checkin') html = renderFaceCheckin(u);
   else if(activeTab==='teacher-checkins') html = renderTeacherCheckinsLog();
   else if(activeTab==='broadcast') html = renderBroadcast();
+  else if(activeTab==='stats') html = renderStatsDashboard();
+  else if(activeTab==='bot-questions') html = renderBotQuestions();
   else if(activeTab==='flashcards') html = renderFlashcards(u);
   else if(activeTab==='teacher-info') html = renderTeacherInfo(u);
   else if(activeTab==='translator') html = renderTranslator();
@@ -2048,6 +2142,7 @@ function renderStudents(){
       <td>${s.coins||0} 🪙</td>
       <td style="display:flex;gap:4px;flex-wrap:wrap;">
         <button class="icon-btn" onclick="openStudentEditModal('${s.id}')">Tahrirlash</button>
+        <button class="icon-btn" onclick="openChangeGroupModal('${s.id}')">🔄 Guruhni almashtirish</button>
         <button class="icon-btn ${s.frozen?'':'rose'}" onclick="toggleStudentFreeze('${s.id}')">${s.frozen?"🔓 Tiklash":"❄️ Muzlatish"}</button>
         <button class="icon-btn rose" onclick="deleteStudent('${s.id}')">O'chirish</button>
       </td>
@@ -2178,6 +2273,51 @@ function openStudentEditModal(studentId){
       </div>
     </div>`;
   document.body.appendChild(bg);
+}
+function openChangeGroupModal(studentId){
+  const s = DB.students.find(x=>x.id===studentId);
+  if(!s) return;
+  const u = DB.users.find(x=>x.id===s.userId);
+  const teacherOpts = DB.teachers.map(tc=>{
+    const tu = DB.users.find(x=>x.id===tc.userId);
+    return `<option value="${tc.id}" ${tc.id===s.teacherId?'selected':''}>${tu?tu.name:'—'} (${tc.subject})</option>`;
+  }).join('');
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>🔄 Guruhni almashtirish — ${u?u.name:''}</h3>
+      <div class="hint" style="margin:-4px 0 12px;">Barcha davomat, to'lov, baho va boshqa ma'lumotlar saqlanib qoladi — faqat o'qituvchi/guruh o'zgaradi.</div>
+      <label>Hozirgi guruh</label>
+      <input type="text" value="${(s.group||'—').replace(/"/g,'&quot;')} (${teacherName(s.teacherId)})" disabled style="opacity:.7;">
+      <label>Yangi o'qituvchi</label>
+      <select id="cg-teacher" onchange="onTeacherSelectChange('cg-teacher','cg-schedule')"><option value="">— tanlang —</option>${teacherOpts}</select>
+      <label>Yangi dars vaqti</label>
+      <select id="cg-schedule" onchange="onScheduleSelectChange('cg-schedule','cg-group')">${s.teacherId?scheduleOptionsForTeacher(s.teacherId, s.scheduleSlotId):'<option value="">— avval o\'qituvchini tanlang —</option>'}</select>
+      <label>Guruh nomi (avtomatik to'ldiriladi)</label><input type="text" id="cg-group" value="${(s.group||'').replace(/"/g,'&quot;')}">
+      <div class="err" id="cg-err"></div>
+      <div class="modal-actions">
+        <button class="btn outline" onclick="this.closest('.modal-bg').remove()">Bekor qilish</button>
+        <button class="btn gold" onclick="saveChangeGroup('${studentId}')">Ko'chirish</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+}
+async function saveChangeGroup(studentId){
+  const teacherId = document.getElementById('cg-teacher').value || null;
+  const scheduleSlotId = document.getElementById('cg-schedule').value || null;
+  const group = document.getElementById('cg-group').value.trim();
+  const err = document.getElementById('cg-err');
+  if(!teacherId){ err.textContent = "O'qituvchini tanlang."; return; }
+  try{
+    await updateRow('students', studentId, {teacherId, scheduleSlotId, group});
+    const s = DB.students.find(x=>x.id===studentId);
+    if(s) Object.assign(s, {teacherId, scheduleSlotId, group});
+  }catch(e){
+    err.textContent = 'Xatolik yuz berdi.'; console.error(e); return;
+  }
+  document.querySelector('.modal-bg').remove();
+  renderMain();
 }
 async function saveStudentEdit(studentId){
   const group = document.getElementById('se-group').value.trim();
@@ -3460,6 +3600,74 @@ async function sendBroadcast(){
   }
   status.textContent = `✅ Yuborildi: ${sent} ta. ${failed?`❌ Xato: ${failed} ta.`:''}`;
   document.getElementById('bc-text').value = '';
+}
+
+/* ============ STATISTIKA PANELI ============ */
+function renderStatsDashboard(){
+  const totalStudents = DB.students.length;
+  const activeStudents = DB.students.filter(s=>!s.frozen);
+  const frozenStudents = DB.students.filter(s=>s.frozen);
+  const paidStudents = activeStudents.filter(s=>getPaymentStatus(s.id).ok);
+  const unpaidStudents = activeStudents.filter(s=>!getPaymentStatus(s.id).ok);
+
+  // Oylik daromad (so'nggi 6 oy)
+  const months = [];
+  const now = new Date(todayStr());
+  for(let i=5;i>=0;i--){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    months.push(d.toISOString().slice(0,7));
+  }
+  const monthLabels = months.map(m=>{
+    const names = ['Yan','Fev','Mar','Apr','May','Iyun','Iyul','Avg','Sen','Okt','Noy','Dek'];
+    return names[Number(m.slice(5,7))-1];
+  });
+  const monthlyRevenue = months.map(m=>DB.payments.filter(p=>p.date && p.date.slice(0,7)===m).reduce((s,p)=>s+Number(p.amount||0),0));
+  const maxRevenue = Math.max(...monthlyRevenue, 1);
+
+  // Yangi ro'yxatdan o'tganlar (joriy oy)
+  const thisMonth = todayStr().slice(0,7);
+  const newThisMonth = DB.users.filter(u=>u.role==='student').length; // umumiy (sana kuzatilmagani uchun umumiy son)
+
+  // O'qituvchi bo'yicha o'quvchilar soni
+  const teacherCounts = DB.teachers.map(tc=>({
+    name: teacherName(tc.id),
+    count: DB.students.filter(s=>s.teacherId===tc.id && !s.frozen).length
+  })).sort((a,b)=>b.count-a.count);
+  const maxTeacherCount = Math.max(...teacherCounts.map(t=>t.count), 1);
+
+  const revenueBarHtml = monthlyRevenue.map((v,i)=>`
+    <div style="display:flex;flex-direction:column;align-items:center;flex:1;">
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">${v>0?(v/1000).toFixed(0)+'k':''}</div>
+      <div style="width:100%;max-width:36px;height:${Math.max(4,(v/maxRevenue)*140)}px;background:var(--gold);border-radius:4px 4px 0 0;"></div>
+      <div style="font-size:11.5px;color:var(--text-dim);margin-top:6px;">${monthLabels[i]}</div>
+    </div>`).join('');
+
+  const teacherBarsHtml = teacherCounts.map(t=>`
+    <div style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px;"><span>${t.name}</span><span style="color:var(--text-dim);">${t.count} ta</span></div>
+      <div style="background:var(--border);border-radius:6px;height:10px;overflow:hidden;">
+        <div style="width:${(t.count/maxTeacherCount)*100}%;height:100%;background:var(--gold);"></div>
+      </div>
+    </div>`).join('');
+
+  return `
+    <div class="topbar"><div><h1>📊 Statistika</h1><p>Markazning umumiy ko'rsatkichlari</p></div></div>
+    <div class="grid cols-3" style="margin-bottom:16px;">
+      <div class="metric"><div class="lbl">Jami o'quvchilar</div><div class="val">${totalStudents}</div></div>
+      <div class="metric"><div class="lbl">To'lagan (faol)</div><div class="val" style="color:var(--green);">${paidStudents.length}</div></div>
+      <div class="metric"><div class="lbl">To'lamagan</div><div class="val" style="color:var(--rose);">${unpaidStudents.length}</div></div>
+      <div class="metric"><div class="lbl">❄️ Muzlatilgan</div><div class="val">${frozenStudents.length}</div></div>
+      <div class="metric"><div class="lbl">O'qituvchilar</div><div class="val">${DB.teachers.length}</div></div>
+      <div class="metric"><div class="lbl">Jami to'lov (barcha vaqt)</div><div class="val" style="font-size:16px;">${DB.payments.reduce((s,p)=>s+Number(p.amount||0),0).toLocaleString()} so'm</div></div>
+    </div>
+    <div class="card">
+      <h3>Oylik daromad (so'nggi 6 oy)</h3>
+      <div style="display:flex;align-items:flex-end;gap:10px;height:180px;margin-top:16px;">${revenueBarHtml}</div>
+    </div>
+    <div class="card">
+      <h3>O'qituvchi bo'yicha faol o'quvchilar</h3>
+      <div style="margin-top:16px;">${teacherBarsHtml || '<div class="empty">Ma\'lumot yo\'q</div>'}</div>
+    </div>`;
 }
 
 /* ============ TELEGRAM REMINDERS ============ */
