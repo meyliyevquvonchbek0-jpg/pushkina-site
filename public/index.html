@@ -522,6 +522,9 @@ const FIELD_MAP = {
   daily_words: {},
   bot_questions: {teacherMessageId:'teacher_message_id', teacherChatId:'teacher_chat_id', studentChatId:'student_chat_id', studentName:'student_name', createdAt:'created_at'},
   video_progress: {studentId:'student_id', videoId:'video_id', maxWatchedSeconds:'max_watched_seconds'},
+  live_games: {testId:'test_id', teacherId:'teacher_id', currentQuestionIndex:'current_question_index', currentQuestionStartedAt:'current_question_started_at'},
+  live_game_players: {gameId:'game_id', studentId:'student_id', studentName:'student_name'},
+  live_game_answers: {gameId:'game_id', questionId:'question_id', studentId:'student_id', selectedOption:'selected_option', answeredAt:'answered_at', pointsAwarded:'points_awarded'},
   teacher_checkins: {teacherId:'teacher_id', distanceMeters:'distance_meters'},
   flashcard_sets: {teacherId:'teacher_id'},
   students: {userId:'user_id', teacherId:'teacher_id', parentPhone:'parent_phone', telegramChatId:'telegram_chat_id', scheduleSlotId:'schedule_slot_id', onlineRequested:'online_requested', onlineApproved:'online_approved'},
@@ -1653,6 +1656,7 @@ const NAV = {
     {id:'materials', label:'Materiallar', icon:'▤'},
     {id:'homework', label:'Uy vazifalari', icon:'📝'},
     {id:'tests', label:'Testlar', icon:'❓'},
+    {id:'live-game', label:'🎮 Jonli o\'yin', icon:'🎮'},
     {id:'leaderboard', label:'Reyting', icon:'🏆'},
     {id:'rewards', label:'Sovg\'alar', icon:'🎁'},
     {id:'reward-requests', label:'Sovg\'a so\'rovlari', icon:'🎁'},
@@ -1676,6 +1680,7 @@ const NAV = {
     {id:'materials', label:'Materiallarim', icon:'▤'},
     {id:'homework', label:'Uy vazifalari', icon:'📝'},
     {id:'tests', label:'Testlarim', icon:'❓'},
+    {id:'live-game', label:'🎮 Jonli o\'yin', icon:'🎮'},
     {id:'leaderboard', label:'Reyting', icon:'🏆'},
     {id:'live-class', label:'Onlayn dars', icon:'●'},
     {id:'translator', label:'Tarjimon', icon:'🌐'}
@@ -1691,6 +1696,7 @@ const NAV = {
     {id:'materials', label:'Materiallar', icon:'▤'},
     {id:'homework', label:'Uy vazifalarim', icon:'📝'},
     {id:'tests', label:'Testlarim', icon:'❓'},
+    {id:'live-game', label:'🎮 Jonli o\'yin', icon:'🎮'},
     {id:'leaderboard', label:'Reyting', icon:'🏆'},
     {id:'rewards', label:'Sovg\'alar', icon:'🎁'},
     {id:'teacher-info', label:'O\'qituvchilar', icon:'▤'},
@@ -1732,7 +1738,7 @@ function renderNav(){
     const div = document.createElement('div');
     div.className = 'nav-item' + (activeTab===item.id ? ' active' : '');
     div.innerHTML = `<span>${item.icon}</span><span>${t(item.label)}</span>`;
-    div.onclick = ()=>{ if(activeTab==='face-checkin' && item.id!=='face-checkin' && typeof stopFaceCamera==='function') stopFaceCamera(); activeTab = item.id; persistTab(item.id); renderNav(); renderMain(); };
+    div.onclick = ()=>{ if(activeTab==='face-checkin' && item.id!=='face-checkin' && typeof stopFaceCamera==='function') stopFaceCamera(); if(activeTab==='live-game' && item.id!=='live-game' && liveGameState.gameId) liveGameCleanup(); activeTab = item.id; persistTab(item.id); renderNav(); renderMain(); };
     list.appendChild(div);
   });
   document.getElementById('cur-user-name').textContent = u.name;
@@ -1776,6 +1782,7 @@ function renderMain(){
   else if(activeTab==='requests') html = renderRequests();
   else if(activeTab==='homework') html = renderHomework(u);
   else if(activeTab==='tests') html = renderTests(u);
+  else if(activeTab==='live-game') html = renderLiveGame(u);
   else if(activeTab==='take-test') html = renderTakeTest(u);
   else if(activeTab==='leaderboard') html = renderLeaderboard(u);
   else if(activeTab==='rewards') html = renderRewards(u);
@@ -4729,6 +4736,305 @@ async function submitTest(auto){
   renderNav();
   renderMain();
   alert(`Test yakunlandi. Natija: ${score}/${questions.length}` + (auto ? ' (vaqt tugagani uchun avtomatik yakunlandi)' : ''));
+}
+
+/* ============ JONLI O'YIN (Kahoot uslubida) ============ */
+const LIVE_Q_DURATION = 20; // soniya
+let liveGameState = {
+  role: null, gameId: null, game: null, players: [], questions: [],
+  myAnswer: null, myLastResult: null, joinPin: '', joinError: '',
+  channel: null, timerInterval: null, timeLeft: 0, answerCount: 0
+};
+function genPin(){ return String(Math.floor(100000 + Math.random()*900000)); }
+function liveGameCleanup(){
+  if(liveGameState.channel){ try{ sb.removeChannel(liveGameState.channel); }catch(e){} }
+  if(liveGameState.timerInterval){ clearInterval(liveGameState.timerInterval); }
+  liveGameState = { role:null, gameId:null, game:null, players:[], questions:[], myAnswer:null, myLastResult:null, joinPin:'', joinError:'', channel:null, timerInterval:null, timeLeft:0, answerCount:0 };
+}
+async function refreshLiveGamePlayers(){
+  const {data} = await sb.from('live_game_players').select('*').eq('game_id', liveGameState.gameId);
+  liveGameState.players = (data||[]).map(r=>fromRow('live_game_players', r)).sort((a,b)=>(b.score||0)-(a.score||0));
+  renderMain();
+}
+async function refreshLiveGameAnswerCount(){
+  if(!liveGameState.game) return;
+  const {count} = await sb.from('live_game_answers').select('*', {count:'exact', head:true})
+    .eq('game_id', liveGameState.gameId).eq('question_id', liveGameState.questions[liveGameState.game.currentQuestionIndex]?.id||'');
+  liveGameState.answerCount = count||0;
+  renderMain();
+}
+function subscribeLiveGame(gameId){
+  const channel = sb.channel('live_game_'+gameId)
+    .on('postgres_changes', {event:'*', schema:'public', table:'live_games', filter:`id=eq.${gameId}`}, payload=>{
+      liveGameState.game = fromRow('live_games', payload.new);
+      liveGameState.myAnswer = null;
+      liveGameState.myLastResult = null;
+      startLiveTimerIfNeeded();
+      if(liveGameState.role==='host') refreshLiveGameAnswerCount();
+      if(liveGameState.role==='player' && liveGameState.game.status==='results') computeMyLiveResult();
+      renderMain();
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'live_game_players', filter:`game_id=eq.${gameId}`}, ()=>{
+      refreshLiveGamePlayers();
+    })
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'live_game_answers', filter:`game_id=eq.${gameId}`}, ()=>{
+      if(liveGameState.role==='host') refreshLiveGameAnswerCount();
+    })
+    .subscribe();
+  liveGameState.channel = channel;
+}
+function startLiveTimerIfNeeded(){
+  if(liveGameState.timerInterval){ clearInterval(liveGameState.timerInterval); liveGameState.timerInterval = null; }
+  if(!liveGameState.game || liveGameState.game.status!=='question') return;
+  const started = new Date(liveGameState.game.currentQuestionStartedAt).getTime();
+  function tick(){
+    const elapsed = (Date.now()-started)/1000;
+    liveGameState.timeLeft = Math.max(0, Math.round(LIVE_Q_DURATION-elapsed));
+    const el = document.getElementById('live-timer');
+    if(el) el.textContent = liveGameState.timeLeft;
+    if(liveGameState.timeLeft<=0){
+      clearInterval(liveGameState.timerInterval);
+      liveGameState.timerInterval = null;
+      if(liveGameState.role==='host') showLiveResults();
+    }
+  }
+  tick();
+  liveGameState.timerInterval = setInterval(tick, 500);
+}
+function renderLiveGame(u){
+  if(liveGameState.gameId){
+    return liveGameState.role==='host' ? renderLiveGameHost(u) : renderLiveGamePlayer(u);
+  }
+  if(u.role==='admin' || u.role==='teacher'){
+    const t = u.role==='teacher' ? DB.teachers.find(x=>x.userId===u.id) : null;
+    const myTests = (u.role==='admin' ? DB.tests : DB.tests.filter(x=>x.teacherId===(t?t.id:null)))
+      .filter(test=>DB.testQuestions.some(q=>q.testId===test.id));
+    return `
+      <div class="topbar"><div><h1>🎮 Jonli o'yin</h1><p>Mavjud testdan jonli, real vaqtli o'yin boshlang</p></div></div>
+      <div class="grid cols-3">${myTests.map(test=>{
+        const qCount = DB.testQuestions.filter(q=>q.testId===test.id).length;
+        return `<div class="course-card"><div class="cc-tag">${qCount} ta savol</div><h3>${test.title}</h3><p>${test.subject||''}</p>
+          <button class="btn sm gold" style="margin-top:10px;" onclick="hostLiveGame('${test.id}')">🎮 Boshlash</button></div>`;
+      }).join('') || '<div class="empty">Avval "Testlar" bo\'limida savolli test yarating</div>'}</div>`;
+  }
+  return `
+    <div class="topbar"><div><h1>🎮 Jonli o'yinga qo'shilish</h1><p>O'qituvchi bergan PIN kodni kiriting</p></div></div>
+    <div class="card" style="max-width:400px;">
+      <label>PIN kod</label>
+      <input type="text" id="lg-pin" maxlength="6" placeholder="123456" style="font-size:24px;text-align:center;letter-spacing:4px;" value="${liveGameState.joinPin}">
+      <div class="err">${liveGameState.joinError}</div>
+      <button class="btn gold" style="margin-top:12px;width:100%;" onclick="joinLiveGame()">Qo'shilish</button>
+    </div>`;
+}
+async function hostLiveGame(testId){
+  const u = curUser();
+  let teacherId = null;
+  if(u.role==='teacher'){ const t = DB.teachers.find(x=>x.userId===u.id); teacherId = t?t.id:null; }
+  const pin = genPin();
+  try{
+    const game = await insertRow('live_games', {testId, teacherId, status:'waiting', pin, currentQuestionIndex:-1, currentQuestionStartedAt:new Date().toISOString()});
+    liveGameState.role = 'host';
+    liveGameState.gameId = game.id;
+    liveGameState.game = game;
+    liveGameState.questions = DB.testQuestions.filter(q=>q.testId===testId);
+    liveGameState.players = [];
+    subscribeLiveGame(game.id);
+    renderMain();
+  }catch(e){ console.error(e); alert("O'yin yaratishda xatolik yuz berdi."); }
+}
+function renderLiveGameHost(u){
+  const g = liveGameState.game;
+  if(!g) return '<div class="empty">Yuklanmoqda...</div>';
+  if(g.status==='waiting'){
+    return `
+      <div class="topbar"><div><h1>🎮 Jonli o'yin — kutilmoqda</h1></div>
+        <button class="btn outline sm" onclick="leaveLiveGame()">✕ Bekor qilish</button></div>
+      <div class="card" style="text-align:center;">
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:6px;">O'quvchilarga shu PIN kodni ayting</div>
+        <div style="font-size:48px;font-weight:800;letter-spacing:8px;color:var(--gold-dark);">${g.pin}</div>
+      </div>
+      <div class="card">
+        <h3>Qo'shilganlar (${liveGameState.players.length})</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+          ${liveGameState.players.map(p=>`<span class="pill gray">${p.studentName}</span>`).join('') || '<span class="empty">Hali hech kim yo\'q</span>'}
+        </div>
+        <button class="btn gold" style="margin-top:16px;" ${liveGameState.players.length?'':'disabled'} onclick="advanceLiveGame()">▶ O'yinni boshlash</button>
+      </div>`;
+  }
+  const qIdx = g.currentQuestionIndex;
+  const q = liveGameState.questions[qIdx];
+  if(g.status==='question'){
+    return `
+      <div class="topbar"><div><h1>Savol ${qIdx+1} / ${liveGameState.questions.length}</h1></div>
+        <div class="metric" style="min-width:100px;"><div class="lbl">Vaqt</div><div class="val rose" id="live-timer">${liveGameState.timeLeft||LIVE_Q_DURATION}</div></div></div>
+      <div class="card">
+        <h2 style="margin-bottom:16px;">${q.question}</h2>
+        <div style="font-size:14px;color:var(--text-dim);">Javob berganlar: ${liveGameState.answerCount} / ${liveGameState.players.length}</div>
+        <button class="btn gold" style="margin-top:16px;" onclick="showLiveResults()">Natijani ko'rsatish</button>
+      </div>`;
+  }
+  if(g.status==='results'){
+    const isLast = qIdx>=liveGameState.questions.length-1;
+    return `
+      <div class="topbar"><div><h1>Natijalar</h1></div></div>
+      <div class="card">
+        <h3>${q.question}</h3>
+        <p style="color:var(--green);font-weight:600;">To'g'ri javob: ${q['option'+q.correctOption.toUpperCase()]}</p>
+      </div>
+      <div class="card">
+        <h3>🏆 Reyting</h3>
+        <table><thead><tr><th>#</th><th>Ism</th><th>Ball</th></tr></thead><tbody>
+          ${liveGameState.players.map((p,i)=>`<tr><td>${i+1}</td><td>${p.studentName}</td><td>${p.score||0}</td></tr>`).join('')}
+        </tbody></table>
+        <button class="btn gold" style="margin-top:16px;" onclick="${isLast?'endLiveGame()':'advanceLiveGame()'}">${isLast?'🏁 Yakunlash':'Keyingi savol →'}</button>
+      </div>`;
+  }
+  if(g.status==='ended'){
+    return `
+      <div class="topbar"><div><h1>🏁 O'yin yakunlandi</h1></div>
+        <button class="btn outline sm" onclick="leaveLiveGame()">Chiqish</button></div>
+      <div class="card">
+        <h3>🏆 Yakuniy natijalar</h3>
+        <table><thead><tr><th>#</th><th>Ism</th><th>Ball</th></tr></thead><tbody>
+          ${liveGameState.players.map((p,i)=>`<tr><td>${i+1}</td><td>${p.studentName}</td><td>${p.score||0}</td></tr>`).join('')}
+        </tbody></table>
+      </div>`;
+  }
+  return '<div class="empty">...</div>';
+}
+async function advanceLiveGame(){
+  const g = liveGameState.game;
+  const nextIdx = (g.status==='waiting') ? 0 : g.currentQuestionIndex+1;
+  try{
+    const updated = await updateRow('live_games', g.id, {status:'question', currentQuestionIndex:nextIdx, currentQuestionStartedAt:new Date().toISOString()});
+    liveGameState.game = updated;
+    liveGameState.answerCount = 0;
+    startLiveTimerIfNeeded();
+    renderMain();
+  }catch(e){ console.error(e); }
+}
+async function showLiveResults(){
+  try{
+    const updated = await updateRow('live_games', liveGameState.game.id, {status:'results'});
+    liveGameState.game = updated;
+    await refreshLiveGamePlayers();
+  }catch(e){ console.error(e); }
+}
+async function endLiveGame(){
+  try{
+    const updated = await updateRow('live_games', liveGameState.game.id, {status:'ended'});
+    liveGameState.game = updated;
+    renderMain();
+  }catch(e){ console.error(e); }
+}
+function leaveLiveGame(){
+  liveGameCleanup();
+  renderMain();
+}
+async function joinLiveGame(){
+  const pin = document.getElementById('lg-pin').value.trim();
+  liveGameState.joinPin = pin;
+  if(!/^\d{6}$/.test(pin)){ liveGameState.joinError = "6 xonali PIN kiriting."; renderMain(); return; }
+  const {data, error} = await sb.from('live_games').select('*').eq('pin', pin).eq('status','waiting').limit(1);
+  if(error || !data || !data.length){ liveGameState.joinError = "Bunday PIN topilmadi yoki o'yin allaqachon boshlangan."; renderMain(); return; }
+  const game = fromRow('live_games', data[0]);
+  const u = curUser();
+  const s = DB.students.find(x=>x.userId===u.id);
+  try{
+    await insertRow('live_game_players', {gameId:game.id, studentId:s?s.id:null, studentName:u.name, score:0});
+  }catch(e){ console.error(e); liveGameState.joinError = "Qo'shilishda xatolik."; renderMain(); return; }
+  const {data: qData} = await sb.from('test_questions').select('*').eq('test_id', game.testId);
+  liveGameState.role = 'player';
+  liveGameState.gameId = game.id;
+  liveGameState.game = game;
+  liveGameState.questions = (qData||[]).map(r=>fromRow('test_questions', r));
+  liveGameState.joinError = '';
+  subscribeLiveGame(game.id);
+  renderMain();
+}
+function renderLiveGamePlayer(u){
+  const g = liveGameState.game;
+  if(!g) return '<div class="empty">Yuklanmoqda...</div>';
+  if(g.status==='waiting'){
+    return `
+      <div class="topbar"><div><h1>🎮 Qo'shildingiz!</h1></div>
+        <button class="btn outline sm" onclick="leaveLiveGame()">✕ Chiqish</button></div>
+      <div class="card" style="text-align:center;">
+        <div style="font-size:18px;font-weight:600;">O'qituvchi boshlashini kuting...</div>
+        <div style="font-size:13px;color:var(--text-dim);margin-top:8px;">${liveGameState.players.length} ta o'quvchi qo'shildi</div>
+      </div>`;
+  }
+  const qIdx = g.currentQuestionIndex;
+  const q = liveGameState.questions[qIdx];
+  if(g.status==='question'){
+    if(liveGameState.myAnswer){
+      return `
+        <div class="topbar"><div><h1>Javobingiz qabul qilindi ✅</h1></div>
+          <div class="metric" style="min-width:100px;"><div class="lbl">Vaqt</div><div class="val rose" id="live-timer">${liveGameState.timeLeft||LIVE_Q_DURATION}</div></div></div>
+        <div class="card" style="text-align:center;"><div style="font-size:16px;">O'qituvchi natijani ko'rsatishini kuting...</div></div>`;
+    }
+    const colors = [['A','#E53E3E'],['B','#3182CE'],['C','#D69E2E'],['D','#38A169']];
+    return `
+      <div class="topbar"><div><h1>Savol ${qIdx+1}</h1></div>
+        <div class="metric" style="min-width:100px;"><div class="lbl">Vaqt</div><div class="val rose" id="live-timer">${liveGameState.timeLeft||LIVE_Q_DURATION}</div></div></div>
+      <div class="card"><h2>${q.question}</h2></div>
+      <div class="grid cols-2">
+        ${colors.map(([letter,color])=>`<button onclick="answerLiveQuestion('${letter}')" style="background:${color};color:#fff;border:none;border-radius:12px;padding:26px 16px;font-size:16px;font-weight:700;cursor:pointer;">${q['option'+letter]}</button>`).join('')}
+      </div>`;
+  }
+  if(g.status==='results'){
+    const r = liveGameState.myLastResult;
+    const isLast = qIdx>=liveGameState.questions.length-1;
+    const myRank = liveGameState.players.findIndex(p=>p.studentId===(DB.students.find(x=>x.userId===u.id)||{}).id)+1;
+    return `
+      <div class="topbar"><div><h1>Natija</h1></div></div>
+      <div class="card" style="text-align:center;">
+        <div style="font-size:22px;font-weight:700;color:${r&&r.correct?'var(--green)':'var(--rose)'};">${r&&r.correct?'✅ To\'g\'ri!':'❌ Noto\'g\'ri'}</div>
+        ${r?`<div style="margin-top:6px;color:var(--text-dim);">+${r.points} ball</div>`:''}
+        <div style="margin-top:14px;font-size:14px;">Joriy o'rningiz: <b>${myRank||'—'}</b></div>
+      </div>
+      <div class="card"><h3>🏆 Reyting</h3><table><thead><tr><th>#</th><th>Ism</th><th>Ball</th></tr></thead><tbody>
+        ${liveGameState.players.map((p,i)=>`<tr><td>${i+1}</td><td>${p.studentName}</td><td>${p.score||0}</td></tr>`).join('')}
+      </tbody></table></div>
+      ${isLast ? '<div class="hint">O\'qituvchi o\'yinni yakunlashini kuting...</div>' : ''}`;
+  }
+  if(g.status==='ended'){
+    return `
+      <div class="topbar"><div><h1>🏁 O'yin tugadi</h1></div>
+        <button class="btn outline sm" onclick="leaveLiveGame()">Chiqish</button></div>
+      <div class="card"><h3>🏆 Yakuniy natijalar</h3><table><thead><tr><th>#</th><th>Ism</th><th>Ball</th></tr></thead><tbody>
+        ${liveGameState.players.map((p,i)=>`<tr><td>${i+1}</td><td>${p.studentName}</td><td>${p.score||0}</td></tr>`).join('')}
+      </tbody></table></div>`;
+  }
+  return '<div class="empty">...</div>';
+}
+async function answerLiveQuestion(letter){
+  if(liveGameState.myAnswer) return;
+  liveGameState.myAnswer = letter;
+  renderMain();
+  const g = liveGameState.game;
+  const q = liveGameState.questions[g.currentQuestionIndex];
+  const correct = letter===q.correctOption;
+  const elapsed = (Date.now()-new Date(g.currentQuestionStartedAt).getTime())/1000;
+  const points = correct ? Math.max(100, Math.round(1000*(1-Math.min(1,elapsed/LIVE_Q_DURATION)*0.5))) : 0;
+  const u = curUser();
+  const s = DB.students.find(x=>x.userId===u.id);
+  try{
+    await insertRow('live_game_answers', {gameId:g.id, questionId:q.id, studentId:s?s.id:null, selectedOption:letter, answeredAt:new Date().toISOString(), correct, pointsAwarded:points});
+    const myPlayer = liveGameState.players.find(p=>p.studentId===(s?s.id:null));
+    if(myPlayer){
+      const newScore = (myPlayer.score||0)+points;
+      await updateRow('live_game_players', myPlayer.id, {score:newScore});
+      myPlayer.score = newScore;
+    }
+    liveGameState.myLastResult = {correct, points};
+  }catch(e){ console.error(e); }
+}
+function computeMyLiveResult(){
+  // myLastResult allaqachon answerLiveQuestion'da hisoblangan; javob berilmagan bo'lsa:
+  if(!liveGameState.myLastResult && liveGameState.myAnswer===null){
+    liveGameState.myLastResult = {correct:false, points:0};
+  }
 }
 
 /* ============ LEADERBOARD ============ */
