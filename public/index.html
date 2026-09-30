@@ -2636,8 +2636,8 @@ async function addMySlot(teacherId){
 
 /* ============ TEACHER: MY STUDENTS ============ */
 function renderMyStudents(u){
-  const t = DB.teachers.find(x=>x.userId===u.id);
-  const myStudents = DB.students.filter(s=>s.teacherId===(t?t.id:null));
+  const myT = DB.teachers.find(x=>x.userId===u.id);
+  const myStudents = DB.students.filter(s=>s.teacherId===(myT?myT.id:null));
   const rows = myStudents.map(s=>{
     const su = DB.users.find(x=>x.id===s.userId);
     const pay = getPaymentStatus(s.id);
@@ -4068,19 +4068,19 @@ function roomNameFor(teacherId){
 }
 function renderLiveClass(u){
   if(u.role==='teacher'){
-    const t = DB.teachers.find(x=>x.userId===u.id);
-    if(!t) return `<div class="empty">Ma'lumot topilmadi</div>`;
-    const room = roomNameFor(t.id);
+    const myT = DB.teachers.find(x=>x.userId===u.id);
+    if(!myT) return `<div class="empty">Ma'lumot topilmadi</div>`;
+    const room = roomNameFor(myT.id);
     const roomUrl = `https://meet.jit.si/${room}#config.prejoinPageEnabled=false`;
     return `
-      <div class="topbar"><div><h1>${t('Onlayn dars')}</h1><p>${t.isLive ? 'Efir hozir FAOL — o\'quvchilaringiz qo\'shila oladi' : 'Efir hozircha o\'chirilgan'}</p></div></div>
+      <div class="topbar"><div><h1>${t('Onlayn dars')}</h1><p>${myT.isLive ? 'Efir hozir FAOL — o\'quvchilaringiz qo\'shila oladi' : 'Efir hozircha o\'chirilgan'}</p></div></div>
       <div class="card">
-        ${t.isLive
-          ? `<button class="btn danger" onclick="toggleLive('${t.id}', false)">Efirni tugatish</button>`
-          : `<button class="btn gold" onclick="toggleLive('${t.id}', true)">Efirni boshlash</button>`
+        ${myT.isLive
+          ? `<button class="btn danger" onclick="toggleLive('${myT.id}', false)">Efirni tugatish</button>`
+          : `<button class="btn gold" onclick="toggleLive('${myT.id}', true)">Efirni boshlash</button>`
         }
       </div>
-      ${t.isLive ? `
+      ${myT.isLive ? `
       <div class="card">
         <p style="margin-bottom:12px;">Kamera va mikrofon to'g'ri ishlashi uchun, dars xonasini <b>alohida to'liq oynada</b> oching:</p>
         <button class="btn gold" onclick="window.open('${roomUrl}','_blank')">Dars xonasini ochish ↗</button>
@@ -4089,13 +4089,13 @@ function renderLiveClass(u){
   }
   if(u.role==='student'){
     const s = DB.students.find(x=>x.userId===u.id);
-    const t = s ? DB.teachers.find(x=>x.id===s.teacherId) : null;
-    if(!t) return `<div class="topbar"><div><h1>${t('Onlayn dars')}</h1></div></div><div class="empty">O'qituvchi biriktirilmagan</div>`;
-    const room = roomNameFor(t.id);
+    const theirT = s ? DB.teachers.find(x=>x.id===s.teacherId) : null;
+    if(!theirT) return `<div class="topbar"><div><h1>${t('Onlayn dars')}</h1></div></div><div class="empty">O'qituvchi biriktirilmagan</div>`;
+    const room = roomNameFor(theirT.id);
     const roomUrl = `https://meet.jit.si/${room}#config.prejoinPageEnabled=false`;
     return `
-      <div class="topbar"><div><h1>${t('Onlayn dars')}</h1><p>${teacherName(t.id)}</p></div></div>
-      ${t.isLive
+      <div class="topbar"><div><h1>${t('Onlayn dars')}</h1><p>${teacherName(theirT.id)}</p></div></div>
+      ${theirT.isLive
         ? `<div class="card">
             <p style="margin-bottom:12px;">O'qituvchingiz efirni boshladi.</p>
             <button class="btn gold" onclick="window.open('${roomUrl}','_blank')">Darsga qo'shilish ↗</button>
@@ -4265,8 +4265,8 @@ function renderHomework(u){
     return `<div class="topbar"><div><h1>${t('Uy vazifalarim')}</h1></div></div>${cards || '<div class="card"><div class="empty">Hozircha uy vazifasi yo\'q</div></div>'}`;
   }
   // admin/teacher
-  const t = u.role==='teacher' ? DB.teachers.find(x=>x.userId===u.id) : null;
-  const myTeacherId = t ? t.id : null;
+  const myT = u.role==='teacher' ? DB.teachers.find(x=>x.userId===u.id) : null;
+  const myTeacherId = myT ? myT.id : null;
   let list = DB.homework;
   if(u.role==='teacher') list = DB.homework.filter(h=>h.teacherId===myTeacherId);
   list = list.slice().sort((a,b)=>b.date.localeCompare(a.date));
@@ -4370,8 +4370,8 @@ let currentAnswers = {};
 
 function renderTests(u){
   if(u.role==='student') return renderStudentTests(u);
-  const t = u.role==='teacher' ? DB.teachers.find(x=>x.userId===u.id) : null;
-  const myTeacherId = t ? t.id : null;
+  const myT = u.role==='teacher' ? DB.teachers.find(x=>x.userId===u.id) : null;
+  const myTeacherId = myT ? myT.id : null;
   let list = DB.tests;
   if(u.role==='teacher') list = DB.tests.filter(x=>x.teacherId===myTeacherId);
   const rows = list.map(test=>{
