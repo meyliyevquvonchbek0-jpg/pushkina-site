@@ -1687,6 +1687,7 @@ const NAV = {
     {id:'home', label:'Bosh sahifa', icon:'⌂'},
     {id:'my-schedule', label:'Mening jadvalim', icon:'▦'},
     {id:'my-students', label:'O\'quvchilarim', icon:'▤'},
+    {id:'my-salary', label:'💰 Mening oyligim', icon:'₪'},
     {id:'attendance', label:'Davomat belgilash', icon:'✓'},
     {id:'payments', label:'To\'lovlar', icon:'₪'},
     {id:'other-groups', label:'Markaz guruhlari', icon:'▥'},
@@ -1779,6 +1780,7 @@ function renderMain(){
   else if(activeTab==='videos') html = renderVideos(u);
   else if(activeTab==='materials') html = renderMaterials(u);
   else if(activeTab==='salaries') html = renderSalaries();
+  else if(activeTab==='my-salary') html = renderMySalary(u);
   else if(activeTab==='telegram-reminders') html = renderTelegramReminders();
   else if(activeTab==='users') html = renderUsers();
   else if(activeTab==='settings') html = renderSettings();
@@ -3864,6 +3866,36 @@ async function deletePayout(id, teacherId){
     renderMain();
     openPayoutHistoryModal(teacherId);
   }catch(e){ console.error(e); alert('Xatolik yuz berdi.'); }
+}
+function renderMySalary(u){
+  const myT = DB.teachers.find(x=>x.userId===u.id);
+  if(!myT) return `<div class="topbar"><div><h1>Mening oyligim</h1></div></div><div class="empty">Ma'lumot topilmadi</div>`;
+  const e = teacherEarnings(myT.id, '__active__');
+  const allTimeShare = teacherAllTimeShare(myT.id);
+  const paidOut = teacherPaidOutTotal(myT.id);
+  const balance = allTimeShare - paidOut;
+  const history = DB.teacherPayouts.filter(p=>p.teacherId===myT.id).sort((a,b)=>b.date.localeCompare(a.date));
+  const rows = history.map(p=>`<tr>
+    <td>${p.date}</td>
+    <td>${p.type==='avans'?'⚡ Avans':"💰 To'lov"}</td>
+    <td>${Number(p.amount).toLocaleString()} so'm</td>
+    <td>${p.note||'—'}</td>
+  </tr>`).join('');
+  return `
+    <div class="topbar"><div><h1>💰 Mening oyligim</h1><p>Joriy holat va to'lovlar tarixi</p></div></div>
+    <div class="grid cols-3" style="margin-bottom:16px;">
+      <div class="metric"><div class="lbl">Joriy ulush (amal qiladigan to'lovlardan)</div><div class="val">${e.share.toLocaleString()} so'm</div></div>
+      <div class="metric"><div class="lbl">Jami to'langan</div><div class="val" style="color:var(--green);">${paidOut.toLocaleString()} so'm</div></div>
+      <div class="metric"><div class="lbl">Qolgan balans</div><div class="val" style="color:${balance>0?'var(--rose)':'var(--green)'};">${balance.toLocaleString()} so'm</div></div>
+    </div>
+    <div class="hint" style="margin-bottom:16px;">"Qolgan balans" — siz hozirgacha ishlagan umumiy ulushingizdan (barcha vaqt bo'yicha), sizga to'langan summalar ayirilgan holda qancha qolganini ko'rsatadi. Har bir o'quvchi to'lovining 50% sizga tegishli.</div>
+    <div class="card">
+      <h3>To'lovlar tarixi</h3>
+      <table>
+        <thead><tr><th>Sana</th><th>Turi</th><th>Summa</th><th>Izoh</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" class="empty">Hali to\'lov qilinmagan</td></tr>'}</tbody>
+      </table>
+    </div>`;
 }
 
 /* ============ OMMAVIY SHOSHILINCH XABAR ============ */
