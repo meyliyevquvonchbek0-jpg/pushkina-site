@@ -520,23 +520,18 @@ const FIELD_MAP = {
   teachers: {userId:'user_id', certificateUrl:'certificate_url', highlightUrl:'highlight_url', isLive:'is_live', totalStudentsTaught:'total_students_taught', certificateLevel:'certificate_level', faceDescriptor:'face_descriptor', telegramChatId:'telegram_chat_id'},
   teacher_ratings: {teacherId:'teacher_id', studentId:'student_id'},
   daily_words: {},
-  duel_words: {},
-  duel_sentences: {},
-  duel_queue: {studentId:'student_id', studentName:'student_name', createdAt:'created_at'},
-  duel_invites: {fromStudentId:'from_student_id', fromName:'from_name', toStudentId:'to_student_id', createdAt:'created_at'},
-  duels: {student1Id:'student1_id', student1Name:'student1_name', student2Id:'student2_id', student2Name:'student2_name', currentQuestionIndex:'current_question_index', currentQuestionStartedAt:'current_question_started_at', player1Score:'player1_score', player2Score:'player2_score', createdAt:'created_at'},
-  duel_answers: {duelId:'duel_id', questionIndex:'question_index', studentId:'student_id', selectedOption:'selected_option', answeredAt:'answered_at'},
   bot_questions: {teacherMessageId:'teacher_message_id', teacherChatId:'teacher_chat_id', studentChatId:'student_chat_id', studentName:'student_name', createdAt:'created_at'},
   video_progress: {studentId:'student_id', videoId:'video_id', maxWatchedSeconds:'max_watched_seconds'},
   live_games: {testId:'test_id', teacherId:'teacher_id', currentQuestionIndex:'current_question_index', currentQuestionStartedAt:'current_question_started_at'},
   live_game_players: {gameId:'game_id', studentId:'student_id', studentName:'student_name'},
   live_game_answers: {gameId:'game_id', questionId:'question_id', studentId:'student_id', selectedOption:'selected_option', answeredAt:'answered_at', pointsAwarded:'points_awarded'},
-  duels: {student1Id:'student1_id', student1Name:'student1_name', student2Id:'student2_id', student2Name:'student2_name', currentQuestionIndex:'current_question_index', currentQuestionStartedAt:'current_question_started_at', player1Score:'player1_score', player2Score:'player2_score'},
-  duel_queue: {studentId:'student_id', studentName:'student_name'},
-  duel_invites: {fromStudentId:'from_student_id', fromName:'from_name', toStudentId:'to_student_id'},
+  duels: {student1Id:'student1_id', student1Name:'student1_name', student2Id:'student2_id', student2Name:'student2_name', currentQuestionIndex:'current_question_index', currentQuestionStartedAt:'current_question_started_at', player1Score:'player1_score', player2Score:'player2_score', createdAt:'created_at'},
+  duel_queue: {studentId:'student_id', studentName:'student_name', createdAt:'created_at'},
+  duel_invites: {fromStudentId:'from_student_id', fromName:'from_name', toStudentId:'to_student_id', createdAt:'created_at'},
   duel_answers: {duelId:'duel_id', questionIndex:'question_index', studentId:'student_id', selectedOption:'selected_option', answeredAt:'answered_at', pointsAwarded:'points_awarded'},
   duel_words: {},
   duel_sentences: {},
+  teacher_payouts: {teacherId:'teacher_id'},
   teacher_checkins: {teacherId:'teacher_id', distanceMeters:'distance_meters'},
   flashcard_sets: {teacherId:'teacher_id'},
   students: {userId:'user_id', teacherId:'teacher_id', parentPhone:'parent_phone', telegramChatId:'telegram_chat_id', scheduleSlotId:'schedule_slot_id', onlineRequested:'online_requested', onlineApproved:'online_approved'},
@@ -661,8 +656,7 @@ let DB = {
   videoProgress: [],
   duelWords: [],
   duelSentences: [],
-  duelWords: [],
-  duelSentences: []
+  teacherPayouts: []
 };
 let deferredInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', (e)=>{
@@ -823,7 +817,7 @@ async function boot(){
       users, teachers, students, schedule, attendance, payments, videos,
       materials, announcements, ratings, settingsRows, tests, testQuestions,
       testAttempts, homework, homeworkStatus, rewards, rewardRequests,
-      reviews, dailyTotals, nazoratScores, teacherCheckins, flashcardSets, teacherRatings, dailyWords, botQuestions, videoProgress
+      reviews, dailyTotals, nazoratScores, teacherCheckins, flashcardSets, teacherRatings, dailyWords, botQuestions, videoProgress, teacherPayouts
     ] = await Promise.all([
       fetchTable('users_public'), fetchTable('teachers'), fetchTable('students'),
       fetchTable('schedule'), fetchTable('attendance'), fetchTable('payments'),
@@ -833,7 +827,8 @@ async function boot(){
       fetchTable('homework_status'), fetchTable('rewards'), fetchTable('reward_requests'),
       fetchTable('reviews'), fetchTable('daily_totals'), fetchTable('nazorat_scores'),
       fetchTable('teacher_checkins'), fetchTable('flashcard_sets'), fetchTable('teacher_ratings'),
-      fetchTable('daily_words'), fetchTable('bot_questions'), fetchTable('video_progress')
+      fetchTable('daily_words'), fetchTable('bot_questions'), fetchTable('video_progress'),
+      fetchTable('teacher_payouts')
     ]);
     DB.users = users; DB.teachers = teachers; DB.students = students;
     DB.schedule = schedule; DB.attendance = attendance; DB.payments = payments;
@@ -849,6 +844,7 @@ async function boot(){
     DB.dailyWords = dailyWords;
     DB.botQuestions = botQuestions;
     DB.videoProgress = videoProgress;
+    DB.teacherPayouts = teacherPayouts;
     try{ renderSocialFloat(); }catch(e){ console.error('renderSocialFloat error', e); }
     try{ renderLandingContent(); }catch(e){ console.error('renderLandingContent error', e); }
     try{ renderLangSwitchers(); }catch(e){ console.error('renderLangSwitchers error', e); }
@@ -3687,42 +3683,187 @@ function teacherEarnings(teacherId, monthPrefix){
   const myStudentIds = DB.students.filter(s=>s.teacherId===teacherId).map(s=>s.id);
   const totalStudents = myStudentIds.length;
   const presentToday = DB.attendance.filter(a=>myStudentIds.includes(a.studentId) && a.date===todayStr() && a.present).length;
-  const paidStudentIds = new Set(
-    DB.payments.filter(p=>myStudentIds.includes(p.studentId) && p.date && p.date.slice(0,7)===monthPrefix).map(p=>p.studentId)
-  );
-  const total = DB.payments
-    .filter(p=>myStudentIds.includes(p.studentId) && p.date && p.date.slice(0,7)===monthPrefix)
-    .reduce((sum,p)=>sum+Number(p.amount||0), 0);
+  let relevantPayments;
+  if(monthPrefix==='__active__'){
+    // Joriy holat: muddati hali o'tmagan (hozir amal qilayotgan) to'lovlar
+    const today = todayStr();
+    relevantPayments = DB.payments.filter(p=>myStudentIds.includes(p.studentId) && p.paidUntil && p.paidUntil>=today);
+  }else{
+    relevantPayments = DB.payments.filter(p=>myStudentIds.includes(p.studentId) && p.date && p.date.slice(0,7)===monthPrefix);
+  }
+  const paidStudentIds = new Set(relevantPayments.map(p=>p.studentId));
+  const total = relevantPayments.reduce((sum,p)=>sum+Number(p.amount||0), 0);
   return {totalStudents, presentToday, paidCount:paidStudentIds.size, total, share: total*0.5};
 }
+function teacherAllTimeShare(teacherId){
+  const myStudentIds = DB.students.filter(s=>s.teacherId===teacherId).map(s=>s.id);
+  const total = DB.payments.filter(p=>myStudentIds.includes(p.studentId)).reduce((sum,p)=>sum+Number(p.amount||0), 0);
+  return total*0.5;
+}
+function teacherPaidOutTotal(teacherId){
+  return DB.teacherPayouts.filter(p=>p.teacherId===teacherId).reduce((sum,p)=>sum+Number(p.amount||0), 0);
+}
+let salariesViewMode = 'active'; // 'active' | 'YYYY-MM'
 function renderSalaries(){
-  const month = todayStr().slice(0,7);
-  const rows = DB.teachers.map(t=>{
-    const u = DB.users.find(x=>x.id===t.userId);
-    const e = teacherEarnings(t.id, month);
+  if(salariesViewMode==='active'){
+    return renderSalariesActive();
+  }
+  return renderSalariesHistory(salariesViewMode);
+}
+function setSalariesView(mode){ salariesViewMode = mode; renderMain(); }
+function shiftSalariesMonth(dir){
+  let base = salariesViewMode==='active' ? todayStr().slice(0,7) : salariesViewMode;
+  const [y,m] = base.split('-').map(Number);
+  const d = new Date(y, m-1+dir, 1);
+  salariesViewMode = d.toISOString().slice(0,7);
+  renderMain();
+}
+function renderSalariesActive(){
+  const totalOwed = DB.teachers.reduce((sum,t)=>sum + (teacherAllTimeShare(t.id) - teacherPaidOutTotal(t.id)), 0);
+  const unpaidStudentsCount = DB.students.filter(s=>!s.frozen && !getPaymentStatus(s.id).ok).length;
+  const rows = DB.teachers.map(tc=>{
+    const u = DB.users.find(x=>x.id===tc.userId);
+    const e = teacherEarnings(tc.id, '__active__');
+    const allTimeShare = teacherAllTimeShare(tc.id);
+    const paidOut = teacherPaidOutTotal(tc.id);
+    const balance = allTimeShare - paidOut;
     return `<tr>
       <td>${u?u.name:'—'}</td>
-      <td>${t.subject||''}</td>
+      <td>${tc.subject||''}</td>
       <td>${e.totalStudents} ta</td>
-      <td>${e.presentToday} ta</td>
       <td>${e.paidCount} / ${e.totalStudents} ta</td>
       <td>${e.total.toLocaleString()} so'm</td>
-      <td>${(e.total - e.share).toLocaleString()} so'm</td>
+      <td><b>${e.share.toLocaleString()} so'm</b></td>
+      <td>${paidOut.toLocaleString()} so'm</td>
+      <td><b style="color:${balance>0?'var(--rose)':'var(--green)'};">${balance.toLocaleString()} so'm</b></td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn sm gold" onclick="openPayoutModal('${tc.id}')">💰 To'lov/Avans</button>
+        <button class="btn sm outline" onclick="openPayoutHistoryModal('${tc.id}')">Tarix</button>
+      </td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="topbar">
+      <div><h1>${t('Oyliklar')}</h1><p>Joriy holat — muddati hali o'tmagan to'lovlar bo'yicha</p></div>
+      <button class="btn outline sm" onclick="exportSalariesCSV()">📤 Excel'ga eksport</button>
+    </div>
+    <div class="grid cols-2" style="margin-bottom:16px;">
+      <div class="metric"><div class="lbl">Markazning o'qituvchilarga umumiy qarzi</div><div class="val" style="color:var(--rose);">${totalOwed.toLocaleString()} so'm</div></div>
+      <div class="metric"><div class="lbl">To'lamagan (qarzdor) o'quvchilar soni</div><div class="val" style="color:var(--rose);">${unpaidStudentsCount} ta</div></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <button class="btn sm gold" onclick="setSalariesView('active')">Joriy holat</button>
+      <button class="btn sm outline" onclick="shiftSalariesMonth(-1)">← O'tgan oylarni ko'rish</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>O'qituvchi</th><th>Fan</th><th>Jami o'quvchi</th><th>Hozir to'lagan</th><th>Jami summa</th><th>Ulushi (joriy)</th><th>To'langan</th><th>Qolgan balans</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="9" class="empty">O\'qituvchi yo\'q</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div class="hint">"Joriy holat" — hali muddati o'tmagan (amal qilayotgan) to'lovlarni ko'rsatadi, oy almashganda yo'qolib qolmaydi. Har bir to'lovning 50% markazga, 50% o'qituvchiga tegishli. "Qolgan balans" — o'qituvchining hozirgача ishlagan ulushidan, unga to'langan summalar ayirilgan holda qancha qolganini ko'rsatadi.</div>`;
+}
+function renderSalariesHistory(month){
+  const rows = DB.teachers.map(tc=>{
+    const u = DB.users.find(x=>x.id===tc.userId);
+    const e = teacherEarnings(tc.id, month);
+    return `<tr>
+      <td>${u?u.name:'—'}</td>
+      <td>${tc.subject||''}</td>
+      <td>${e.paidCount} ta to'lov</td>
+      <td>${e.total.toLocaleString()} so'm</td>
       <td><b>${e.share.toLocaleString()} so'm</b></td>
     </tr>`;
   }).join('');
   return `
     <div class="topbar">
-      <div><h1>${t('Oyliklar')}</h1><p>Joriy oy (${month}) — har bir to'lov 50/50 bo'linadi: markazga va o'qituvchiga</p></div>
+      <div><h1>${t('Oyliklar')} — ${month}</h1><p>Tarixiy oy bo'yicha (o'sha oyda kiritilgan to'lovlar asosida)</p></div>
       <button class="btn outline sm" onclick="exportSalariesCSV()">📤 Excel'ga eksport</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center;">
+      <button class="btn sm outline" onclick="shiftSalariesMonth(-1)">← Oldingi oy</button>
+      <button class="btn sm gold" onclick="setSalariesView('active')">Joriy holatga qaytish</button>
+      <button class="btn sm outline" onclick="shiftSalariesMonth(1)">Keyingi oy →</button>
     </div>
     <div class="card">
       <table>
-        <thead><tr><th>O'qituvchi</th><th>Fan</th><th>Jami o'quvchi</th><th>Bugun kelgan</th><th>Bu oy to'lagan</th><th>Jami summa</th><th>Markazga qoladi</th><th>O'qituvchi ulushi</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="8" class="empty">O\'qituvchi yo\'q</td></tr>'}</tbody>
+        <thead><tr><th>O'qituvchi</th><th>Fan</th><th>To'lovlar soni</th><th>Jami summa</th><th>Ulushi</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="empty">Ma\'lumot yo\'q</td></tr>'}</tbody>
       </table>
-    </div>
-    <div class="hint">Har bir to'lovning 50% avtomatik markazga, 50% o'sha o'quvchining o'qituvchisiga tegishli deb hisoblanadi. Masalan 500,000 so'm to'lansa: 250,000 so'm markazga, 250,000 so'm o'qituvchiga.</div>`;
+    </div>`;
+}
+function openPayoutModal(teacherId){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>To'lov / Avans qo'shish</h3>
+      <label>Turi</label>
+      <select id="po-type">
+        <option value="to'lov">💰 Oylik to'lov</option>
+        <option value="avans">⚡ Avans</option>
+      </select>
+      <label>Summa (so'm)</label><input type="number" id="po-amount" min="0">
+      <label>Sana</label><input type="date" id="po-date" value="${todayStr()}">
+      <label>Izoh (ixtiyoriy)</label><input type="text" id="po-note" placeholder="masalan: sentyabr oyi uchun">
+      <div class="err" id="po-err"></div>
+      <div class="modal-actions">
+        <button class="btn outline" onclick="this.closest('.modal-bg').remove()">Bekor qilish</button>
+        <button class="btn gold" onclick="savePayout('${teacherId}')">Saqlash</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+}
+async function savePayout(teacherId){
+  const type = document.getElementById('po-type').value;
+  const amount = Number(document.getElementById('po-amount').value);
+  const date = document.getElementById('po-date').value;
+  const note = document.getElementById('po-note').value.trim();
+  const err = document.getElementById('po-err');
+  if(!amount || amount<=0){ err.textContent = "To'g'ri summa kiriting."; return; }
+  if(!date){ err.textContent = "Sanani kiriting."; return; }
+  try{
+    const newP = await insertRow('teacher_payouts', {teacherId, type, amount, date, note});
+    DB.teacherPayouts.push(newP);
+    document.querySelector('.modal-bg').remove();
+    renderMain();
+  }catch(e){ console.error(e); err.textContent = 'Xatolik yuz berdi.'; }
+}
+function openPayoutHistoryModal(teacherId){
+  const tc = DB.teachers.find(x=>x.id===teacherId);
+  const u = DB.users.find(x=>x.id===tc.userId);
+  const history = DB.teacherPayouts.filter(p=>p.teacherId===teacherId).sort((a,b)=>b.date.localeCompare(a.date));
+  const rows = history.map(p=>`<tr>
+    <td>${p.date}</td>
+    <td>${p.type==='avans'?'⚡ Avans':"💰 To'lov"}</td>
+    <td>${Number(p.amount).toLocaleString()} so'm</td>
+    <td>${p.note||'—'}</td>
+    <td><button class="icon-btn rose" onclick="deletePayout('${p.id}','${teacherId}')">O'chirish</button></td>
+  </tr>`).join('');
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>To'lovlar tarixi — ${u?u.name:''}</h3>
+      <table>
+        <thead><tr><th>Sana</th><th>Turi</th><th>Summa</th><th>Izoh</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="empty">Hali to\'lov qilinmagan</td></tr>'}</tbody>
+      </table>
+      <div class="modal-actions" style="margin-top:14px;">
+        <button class="btn outline" onclick="this.closest('.modal-bg').remove()">Yopish</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+}
+async function deletePayout(id, teacherId){
+  if(!confirm("Bu yozuvni o'chirmoqchimisiz?")) return;
+  try{
+    await deleteRow('teacher_payouts', id);
+    DB.teacherPayouts = DB.teacherPayouts.filter(x=>x.id!==id);
+    document.querySelector('.modal-bg').remove();
+    renderMain();
+    openPayoutHistoryModal(teacherId);
+  }catch(e){ console.error(e); alert('Xatolik yuz berdi.'); }
 }
 
 /* ============ OMMAVIY SHOSHILINCH XABAR ============ */
@@ -3840,6 +3981,7 @@ function renderStatsDashboard(){
       <div class="metric"><div class="lbl">❄️ Muzlatilgan</div><div class="val">${frozenStudents.length}</div></div>
       <div class="metric"><div class="lbl">O'qituvchilar</div><div class="val">${DB.teachers.length}</div></div>
       <div class="metric"><div class="lbl">Jami to'lov (barcha vaqt)</div><div class="val" style="font-size:16px;">${DB.payments.reduce((s,p)=>s+Number(p.amount||0),0).toLocaleString()} so'm</div></div>
+      <div class="metric"><div class="lbl">Markazning o'qituvchilarga qarzi</div><div class="val" style="font-size:16px;color:var(--rose);">${DB.teachers.reduce((sum,tc)=>sum+(teacherAllTimeShare(tc.id)-teacherPaidOutTotal(tc.id)),0).toLocaleString()} so'm</div></div>
     </div>
     <div class="card">
       <h3>Oylik daromad (so'nggi 6 oy)</h3>
