@@ -520,11 +520,23 @@ const FIELD_MAP = {
   teachers: {userId:'user_id', certificateUrl:'certificate_url', highlightUrl:'highlight_url', isLive:'is_live', totalStudentsTaught:'total_students_taught', certificateLevel:'certificate_level', faceDescriptor:'face_descriptor', telegramChatId:'telegram_chat_id'},
   teacher_ratings: {teacherId:'teacher_id', studentId:'student_id'},
   daily_words: {},
+  duel_words: {},
+  duel_sentences: {},
+  duel_queue: {studentId:'student_id', studentName:'student_name', createdAt:'created_at'},
+  duel_invites: {fromStudentId:'from_student_id', fromName:'from_name', toStudentId:'to_student_id', createdAt:'created_at'},
+  duels: {student1Id:'student1_id', student1Name:'student1_name', student2Id:'student2_id', student2Name:'student2_name', currentQuestionIndex:'current_question_index', currentQuestionStartedAt:'current_question_started_at', player1Score:'player1_score', player2Score:'player2_score', createdAt:'created_at'},
+  duel_answers: {duelId:'duel_id', questionIndex:'question_index', studentId:'student_id', selectedOption:'selected_option', answeredAt:'answered_at'},
   bot_questions: {teacherMessageId:'teacher_message_id', teacherChatId:'teacher_chat_id', studentChatId:'student_chat_id', studentName:'student_name', createdAt:'created_at'},
   video_progress: {studentId:'student_id', videoId:'video_id', maxWatchedSeconds:'max_watched_seconds'},
   live_games: {testId:'test_id', teacherId:'teacher_id', currentQuestionIndex:'current_question_index', currentQuestionStartedAt:'current_question_started_at'},
   live_game_players: {gameId:'game_id', studentId:'student_id', studentName:'student_name'},
   live_game_answers: {gameId:'game_id', questionId:'question_id', studentId:'student_id', selectedOption:'selected_option', answeredAt:'answered_at', pointsAwarded:'points_awarded'},
+  duels: {student1Id:'student1_id', student1Name:'student1_name', student2Id:'student2_id', student2Name:'student2_name', currentQuestionIndex:'current_question_index', currentQuestionStartedAt:'current_question_started_at', player1Score:'player1_score', player2Score:'player2_score'},
+  duel_queue: {studentId:'student_id', studentName:'student_name'},
+  duel_invites: {fromStudentId:'from_student_id', fromName:'from_name', toStudentId:'to_student_id'},
+  duel_answers: {duelId:'duel_id', questionIndex:'question_index', studentId:'student_id', selectedOption:'selected_option', answeredAt:'answered_at', pointsAwarded:'points_awarded'},
+  duel_words: {},
+  duel_sentences: {},
   teacher_checkins: {teacherId:'teacher_id', distanceMeters:'distance_meters'},
   flashcard_sets: {teacherId:'teacher_id'},
   students: {userId:'user_id', teacherId:'teacher_id', parentPhone:'parent_phone', telegramChatId:'telegram_chat_id', scheduleSlotId:'schedule_slot_id', onlineRequested:'online_requested', onlineApproved:'online_approved'},
@@ -646,7 +658,11 @@ let DB = {
   teacherRatings: [],
   dailyWords: [],
   botQuestions: [],
-  videoProgress: []
+  videoProgress: [],
+  duelWords: [],
+  duelSentences: [],
+  duelWords: [],
+  duelSentences: []
 };
 let deferredInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', (e)=>{
@@ -851,6 +867,7 @@ async function boot(){
           activeTab = parsed.tab || 'home';
           renderNav();
           renderMain();
+          try{ setupDuelPresenceAndInvites(); }catch(e){ console.error(e); }
         }else{
           localStorage.removeItem('pushkina_session');
         }
@@ -1226,6 +1243,7 @@ async function handleLogin(){
   activeTab = 'home';
   renderNav();
   renderMain();
+  try{ setupDuelPresenceAndInvites(); }catch(e){ console.error(e); }
 }
 function handleLogout(){
   session = null;
@@ -1692,6 +1710,7 @@ const NAV = {
     {id:'my-ratings', label:'Baholarim', icon:'★'},
     {id:'my-review', label:'Sharh qoldirish', icon:'💬'},
     {id:'ai-chat', label:'AI suhbat (Rus/Ingliz)', icon:'🤖'},
+    {id:'duel', label:'⚔️ Bellashuv', icon:'⚔️'},
     {id:'videos', label:'Video darslar', icon:'▶'},
     {id:'materials', label:'Materiallar', icon:'▤'},
     {id:'homework', label:'Uy vazifalarim', icon:'📝'},
@@ -1738,7 +1757,7 @@ function renderNav(){
     const div = document.createElement('div');
     div.className = 'nav-item' + (activeTab===item.id ? ' active' : '');
     div.innerHTML = `<span>${item.icon}</span><span>${t(item.label)}</span>`;
-    div.onclick = ()=>{ if(activeTab==='face-checkin' && item.id!=='face-checkin' && typeof stopFaceCamera==='function') stopFaceCamera(); if(activeTab==='live-game' && item.id!=='live-game' && liveGameState.gameId) liveGameCleanup(); activeTab = item.id; persistTab(item.id); renderNav(); renderMain(); };
+    div.onclick = ()=>{ if(activeTab==='face-checkin' && item.id!=='face-checkin' && typeof stopFaceCamera==='function') stopFaceCamera(); if(activeTab==='live-game' && item.id!=='live-game' && liveGameState.gameId) liveGameCleanup(); if(activeTab==='duel' && item.id!=='duel' && duelState.duelChannel){ try{ sb.removeChannel(duelState.duelChannel); }catch(e){} if(duelState.timerInterval) clearInterval(duelState.timerInterval); } activeTab = item.id; persistTab(item.id); renderNav(); renderMain(); };
     list.appendChild(div);
   });
   document.getElementById('cur-user-name').textContent = u.name;
@@ -1783,6 +1802,7 @@ function renderMain(){
   else if(activeTab==='homework') html = renderHomework(u);
   else if(activeTab==='tests') html = renderTests(u);
   else if(activeTab==='live-game') html = renderLiveGame(u);
+  else if(activeTab==='duel') html = renderDuel(u);
   else if(activeTab==='take-test') html = renderTakeTest(u);
   else if(activeTab==='leaderboard') html = renderLeaderboard(u);
   else if(activeTab==='rewards') html = renderRewards(u);
@@ -5035,6 +5055,367 @@ function computeMyLiveResult(){
   if(!liveGameState.myLastResult && liveGameState.myAnswer===null){
     liveGameState.myLastResult = {correct:false, points:0};
   }
+}
+
+/* ============ BELLASHUV (1v1 so'z/gap duel) ============ */
+const DUEL_LEVELS = ['A1','A2','B1','B2','C1'];
+const DUEL_Q_DURATION = 10;
+let duelState = { phase:'menu', mode:'word', language:'ru', onlineStudents:[], incomingInvite:null, duelId:null, duel:null, myAnswer:null, myLastCorrect:null, duelChannel:null, timerInterval:null, timeLeft:0, opponentAnswered:false };
+let duelContentLoaded = false;
+let globalDuelChannels = { presence:null, invites:null, p1:null, p2:null };
+
+async function fetchDuelContent(){
+  if(duelContentLoaded) return;
+  const [{data:wData}, {data:sData}] = await Promise.all([
+    sb.from('duel_words').select('*'),
+    sb.from('duel_sentences').select('*')
+  ]);
+  DB.duelWords = (wData||[]).map(r=>fromRow('duel_words', r));
+  DB.duelSentences = (sData||[]).map(r=>fromRow('duel_sentences', r));
+  duelContentLoaded = true;
+}
+
+function setupDuelPresenceAndInvites(){
+  const u = curUser();
+  if(!u || u.role!=='student') return;
+  const s = DB.students.find(x=>x.userId===u.id);
+  if(!s || globalDuelChannels.presence) return;
+
+  const presCh = sb.channel('online-students', {config:{presence:{key:s.id}}});
+  presCh.on('presence', {event:'sync'}, ()=>{
+    const state = presCh.presenceState();
+    duelState.onlineStudents = Object.keys(state).map(k=>state[k][0]).filter(p=>p.studentId!==s.id);
+    if(activeTab==='duel') renderMain();
+  });
+  presCh.subscribe(async (status)=>{
+    if(status==='SUBSCRIBED'){ await presCh.track({studentId:s.id, studentName:u.name}); }
+  });
+  globalDuelChannels.presence = presCh;
+
+  const invCh = sb.channel('duel_invites_'+s.id)
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'duel_invites', filter:`to_student_id=eq.${s.id}`}, payload=>{
+      const inv = fromRow('duel_invites', payload.new);
+      if(inv.status==='pending'){ duelState.incomingInvite = inv; renderMain(); }
+    })
+    .subscribe();
+  globalDuelChannels.invites = invCh;
+
+  const p1Ch = sb.channel('duel_as_p1_'+s.id)
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'duels', filter:`student1_id=eq.${s.id}`}, payload=>{
+      enterMatchedDuel(fromRow('duels', payload.new));
+    }).subscribe();
+  globalDuelChannels.p1 = p1Ch;
+  const p2Ch = sb.channel('duel_as_p2_'+s.id)
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'duels', filter:`student2_id=eq.${s.id}`}, payload=>{
+      enterMatchedDuel(fromRow('duels', payload.new));
+    }).subscribe();
+  globalDuelChannels.p2 = p2Ch;
+}
+
+function buildDuelQuestions(mode, language){
+  const lang = language || 'ru';
+  const questions = [];
+  DUEL_LEVELS.forEach(level=>{
+    let pool = [];
+    if(mode==='word'){
+      pool = DB.duelWords.filter(w=>w.level===level && (w.language||'ru')===lang).map(w=>({qtype:'word', text:w.word, correct:w.correct, opt2:w.opt2, opt3:w.opt3, opt4:w.opt4, level}));
+    }else if(mode==='sentence'){
+      pool = DB.duelSentences.filter(x=>x.level===level && (x.language||'ru')===lang).map(x=>({qtype:'sentence', stype:x.type, text:x.question, correct:x.correct, opt2:x.opt2, opt3:x.opt3, opt4:x.opt4, level}));
+    }else{
+      const w = DB.duelWords.filter(x=>x.level===level && (x.language||'ru')===lang).map(x=>({qtype:'word', text:x.word, correct:x.correct, opt2:x.opt2, opt3:x.opt3, opt4:x.opt4, level}));
+      const s2 = DB.duelSentences.filter(x=>x.level===level && (x.language||'ru')===lang).map(x=>({qtype:'sentence', stype:x.type, text:x.question, correct:x.correct, opt2:x.opt2, opt3:x.opt3, opt4:x.opt4, level}));
+      pool = w.concat(s2);
+    }
+    pool = pool.slice().sort(()=>Math.random()-0.5);
+    const take = mode==='word' ? Math.min(10, pool.length) : Math.min(10, pool.length);
+    questions.push(...pool.slice(0, take));
+  });
+  return questions;
+}
+
+async function startDuelSearch(mode){
+  await fetchDuelContent();
+  const u = curUser();
+  const s = DB.students.find(x=>x.userId===u.id);
+  if(!s) return;
+  duelState.mode = mode;
+  duelState.phase = 'searching';
+  renderMain();
+  const language = duelState.language || 'ru';
+  try{
+    const {data: existing} = await sb.from('duel_queue').select('*').eq('mode', mode).eq('language', language).neq('student_id', s.id).limit(1);
+    if(existing && existing.length){
+      const other = fromRow('duel_queue', existing[0]);
+      const questions = buildDuelQuestions(mode, language);
+      const duel = await insertRow('duels', {
+        student1Id: other.studentId, student1Name: other.studentName,
+        student2Id: s.id, student2Name: u.name,
+        mode, language, status:'active', questions,
+        currentQuestionIndex:0, currentQuestionStartedAt:new Date().toISOString(),
+        player1Score:0, player2Score:0
+      });
+      await sb.from('duel_queue').delete().eq('id', other.id);
+      enterMatchedDuel(duel);
+    }else{
+      await insertRow('duel_queue', {studentId:s.id, studentName:u.name, mode, language});
+    }
+  }catch(e){ console.error(e); }
+}
+async function cancelDuelSearch(){
+  const u = curUser();
+  const s = DB.students.find(x=>x.userId===u.id);
+  if(s){ try{ await sb.from('duel_queue').delete().eq('student_id', s.id); }catch(e){} }
+  duelState.phase = 'menu';
+  renderMain();
+}
+async function sendDuelInvite(toStudentId, toStudentName){
+  await fetchDuelContent();
+  const u = curUser();
+  const s = DB.students.find(x=>x.userId===u.id);
+  if(!s) return;
+  try{
+    await insertRow('duel_invites', {fromStudentId:s.id, fromName:u.name, toStudentId, mode:duelState.mode, language:duelState.language||'ru', status:'pending'});
+    alert(`${toStudentName}ga taklif yuborildi. Kutib turing...`);
+  }catch(e){ console.error(e); alert('Xatolik yuz berdi.'); }
+}
+async function respondDuelInvite(accept){
+  const inv = duelState.incomingInvite;
+  duelState.incomingInvite = null;
+  if(!inv){ renderMain(); return; }
+  if(!accept){
+    try{ await updateRow('duel_invites', inv.id, {status:'declined'}); }catch(e){}
+    renderMain();
+    return;
+  }
+  await fetchDuelContent();
+  const u = curUser();
+  const s = DB.students.find(x=>x.userId===u.id);
+  const language = inv.language || 'ru';
+  try{
+    await updateRow('duel_invites', inv.id, {status:'accepted'});
+    const questions = buildDuelQuestions(inv.mode, language);
+    const duel = await insertRow('duels', {
+      student1Id: inv.fromStudentId, student1Name: inv.fromName,
+      student2Id: s.id, student2Name: u.name,
+      mode: inv.mode, language, status:'active', questions,
+      currentQuestionIndex:0, currentQuestionStartedAt:new Date().toISOString(),
+      player1Score:0, player2Score:0
+    });
+    enterMatchedDuel(duel);
+  }catch(e){ console.error(e); alert('Xatolik yuz berdi.'); }
+}
+function enterMatchedDuel(duel){
+  duelState.phase = 'active';
+  duelState.duelId = duel.id;
+  duelState.duel = duel;
+  duelState.myAnswer = null;
+  duelState.myLastCorrect = null;
+  duelState.opponentAnswered = false;
+  activeTab = 'duel';
+  persistTab('duel');
+  subscribeDuelChannel(duel.id);
+  startDuelTimer();
+  renderNav();
+  renderMain();
+}
+function subscribeDuelChannel(duelId){
+  if(duelState.duelChannel){ try{ sb.removeChannel(duelState.duelChannel); }catch(e){} }
+  const channel = sb.channel('duel_'+duelId)
+    .on('postgres_changes', {event:'UPDATE', schema:'public', table:'duels', filter:`id=eq.${duelId}`}, payload=>{
+      duelState.duel = fromRow('duels', payload.new);
+      duelState.myAnswer = null;
+      duelState.opponentAnswered = false;
+      startDuelTimer();
+      renderMain();
+    })
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'duel_answers', filter:`duel_id=eq.${duelId}`}, payload=>{
+      const ans = fromRow('duel_answers', payload.new);
+      const u = curUser();
+      const s = DB.students.find(x=>x.userId===u.id);
+      if(ans.studentId!==(s?s.id:null)){
+        duelState.opponentAnswered = true;
+        maybeAdvanceDuel();
+        renderMain();
+      }
+    })
+    .subscribe();
+  duelState.duelChannel = channel;
+}
+function startDuelTimer(){
+  if(duelState.timerInterval){ clearInterval(duelState.timerInterval); duelState.timerInterval = null; }
+  const d = duelState.duel;
+  if(!d || d.status!=='active') return;
+  const started = new Date(d.currentQuestionStartedAt).getTime();
+  function tick(){
+    const elapsed = (Date.now()-started)/1000;
+    duelState.timeLeft = Math.max(0, Math.round(DUEL_Q_DURATION-elapsed));
+    const el = document.getElementById('duel-timer');
+    if(el) el.textContent = duelState.timeLeft;
+    if(duelState.timeLeft<=0){
+      clearInterval(duelState.timerInterval);
+      duelState.timerInterval = null;
+      maybeAdvanceDuel(true);
+    }
+  }
+  tick();
+  duelState.timerInterval = setInterval(tick, 400);
+}
+function seededShuffle(arr, seed){
+  const a = arr.slice();
+  let sd = seed || 1;
+  for(let i=a.length-1;i>0;i--){
+    sd = (sd*9301+49297)%233280;
+    const j = Math.floor((sd/233280)*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+function duelOptionMap(d, q){
+  const seed = (d.currentQuestionIndex+1)*7919;
+  const shuffled = seededShuffle([q.correct, q.opt2, q.opt3, q.opt4], seed);
+  const letters = ['A','B','C','D'];
+  const map = {};
+  letters.forEach((l,i)=>map[l]=shuffled[i]);
+  return map;
+}
+async function answerDuelQuestion(letter){
+  if(duelState.myAnswer) return;
+  duelState.myAnswer = letter;
+  renderMain();
+  const d = duelState.duel;
+  const q = d.questions[d.currentQuestionIndex];
+  const optMap = duelOptionMap(d, q);
+  const correct = optMap[letter]===q.correct;
+  const elapsed = (Date.now()-new Date(d.currentQuestionStartedAt).getTime())/1000;
+  const points = correct ? Math.max(20, Math.round(100*(1-Math.min(1,elapsed/DUEL_Q_DURATION)*0.5))) : 0;
+  duelState.myLastCorrect = correct;
+  const u = curUser();
+  const s = DB.students.find(x=>x.userId===u.id);
+  const isP1 = d.student1Id===s.id;
+  try{
+    await insertRow('duel_answers', {duelId:d.id, questionIndex:d.currentQuestionIndex, studentId:s.id, selectedOption:letter, answeredAt:new Date().toISOString(), correct, pointsAwarded:points});
+    if(isP1){
+      const newScore = (d.player1Score||0)+points;
+      await updateRow('duels', d.id, {player1Score:newScore});
+      duelState.duel.player1Score = newScore;
+    }else{
+      const newScore = (d.player2Score||0)+points;
+      await updateRow('duels', d.id, {player2Score:newScore});
+      duelState.duel.player2Score = newScore;
+    }
+    maybeAdvanceDuel();
+  }catch(e){ console.error(e); }
+}
+async function maybeAdvanceDuel(forced){
+  const d = duelState.duel;
+  if(!d || d.status!=='active') return;
+  const bothAnswered = duelState.myAnswer && duelState.opponentAnswered;
+  if(!bothAnswered && !forced) return;
+  const u = curUser();
+  const s = DB.students.find(x=>x.userId===u.id);
+  if(d.student1Id!==s.id) return; // faqat 1-o'yinchi (xost) ilgari suradi — poyga oldini olish uchun
+  if(duelState.timerInterval){ clearInterval(duelState.timerInterval); duelState.timerInterval = null; }
+  const nextIdx = d.currentQuestionIndex+1;
+  try{
+    if(nextIdx >= d.questions.length){
+      await updateRow('duels', d.id, {status:'ended'});
+    }else{
+      await updateRow('duels', d.id, {currentQuestionIndex:nextIdx, currentQuestionStartedAt:new Date().toISOString()});
+    }
+  }catch(e){ console.error(e); }
+}
+function leaveDuel(){
+  if(duelState.duelChannel){ try{ sb.removeChannel(duelState.duelChannel); }catch(e){} }
+  if(duelState.timerInterval){ clearInterval(duelState.timerInterval); }
+  duelState = { phase:'menu', mode:'word', onlineStudents:duelState.onlineStudents, incomingInvite:null, duelId:null, duel:null, myAnswer:null, myLastCorrect:null, duelChannel:null, timerInterval:null, timeLeft:0, opponentAnswered:false };
+  renderMain();
+}
+function renderDuel(u){
+  setupDuelPresenceAndInvites();
+  const inviteBanner = duelState.incomingInvite ? `
+    <div class="card" style="border:2px solid var(--gold);">
+      <b>⚔️ ${duelState.incomingInvite.fromName}</b> sizni bellashuvga chaqirmoqda! (${duelState.incomingInvite.language==='en'?'Ingliz tili':'Rus tili'})
+      <div style="margin-top:10px;display:flex;gap:8px;">
+        <button class="btn sm gold" onclick="respondDuelInvite(true)">Qabul qilish</button>
+        <button class="btn sm outline" onclick="respondDuelInvite(false)">Rad etish</button>
+      </div>
+    </div>` : '';
+
+  if(duelState.phase==='active' && duelState.duel){ return inviteBanner + renderDuelActive(u); }
+  if(duelState.phase==='searching'){
+    return `
+      <div class="topbar"><div><h1>⚔️ Bellashuv</h1></div></div>
+      ${inviteBanner}
+      <div class="card" style="text-align:center;">
+        <div style="font-size:16px;">🔍 Raqib qidirilmoqda...</div>
+        <button class="btn outline sm" style="margin-top:14px;" onclick="cancelDuelSearch()">Bekor qilish</button>
+      </div>`;
+  }
+  const modes = [['word',"📖 So'z bilan"],['sentence',"✍️ Gap bilan"],['mixed',"🔀 Aralash"]];
+  const langs = [['ru',"🇷🇺 Rus tili"],['en',"🇬🇧 Ingliz tili"]];
+  return `
+    <div class="topbar"><div><h1>⚔️ Bellashuv</h1><p>So'z/gap bilimingizni boshqa o'quvchi bilan sinang</p></div></div>
+    ${inviteBanner}
+    <div class="card">
+      <label>Tilni tanlang</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+        ${langs.map(([code,label])=>`<button class="btn sm ${(duelState.language||'ru')===code?'gold':'outline'}" onclick="duelState.language='${code}';renderMain();">${label}</button>`).join('')}
+      </div>
+      <label>Turini tanlang</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+        ${modes.map(([code,label])=>`<button class="btn sm ${duelState.mode===code?'gold':'outline'}" onclick="duelState.mode='${code}';renderMain();">${label}</button>`).join('')}
+      </div>
+      <button class="btn gold" onclick="startDuelSearch(duelState.mode)">🔍 Raqib qidirish</button>
+    </div>
+    <div class="card">
+      <h3>Onlayn o'quvchilar (${duelState.onlineStudents.length})</h3>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">
+        ${duelState.onlineStudents.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;"><span>🟢 ${p.studentName}</span><button class="btn sm outline" onclick="sendDuelInvite('${p.studentId}','${p.studentName.replace(/'/g,"\\'")}')">Chaqirish</button></div>`).join('') || '<div class="empty">Hozircha onlayn o\'quvchi yo\'q</div>'}
+      </div>
+    </div>`;
+}
+function renderDuelActive(u){
+  const d = duelState.duel;
+  const s = DB.students.find(x=>x.userId===u.id);
+  const isP1 = d.student1Id===s.id;
+  const myScore = isP1 ? d.player1Score : d.player2Score;
+  const oppScore = isP1 ? d.player2Score : d.player1Score;
+  const oppName = isP1 ? d.student2Name : d.student1Name;
+
+  if(d.status==='ended'){
+    const won = myScore>oppScore, tie = myScore===oppScore;
+    return `
+      <div class="topbar"><div><h1>🏁 Bellashuv tugadi</h1></div>
+        <button class="btn outline sm" onclick="leaveDuel()">Chiqish</button></div>
+      <div class="card" style="text-align:center;">
+        <div style="font-size:26px;font-weight:800;color:${tie?'var(--text-dim)':(won?'var(--green)':'var(--rose)')};">${tie?"🤝 Durrang!":(won?"🏆 G'alaba!":"Mag'lubiyat")}</div>
+        <div style="margin-top:14px;display:flex;justify-content:center;gap:40px;">
+          <div><div style="font-size:12px;color:var(--text-dim);">Siz</div><div style="font-size:24px;font-weight:700;">${myScore}</div></div>
+          <div><div style="font-size:12px;color:var(--text-dim);">${oppName}</div><div style="font-size:24px;font-weight:700;">${oppScore}</div></div>
+        </div>
+      </div>`;
+  }
+  const q = d.questions[d.currentQuestionIndex];
+  const optLabels = duelOptionMap(d, q);
+  const promptText = q.qtype==='word' ? `So'zning ma'nosini tanlang: "${q.text}"` :
+    (q.stype==='fill' ? `Bo'sh joyni to'ldiring: ${q.text}` : `Tarjimasini tanlang: "${q.text}"`);
+  const colors = [['A','#E53E3E'],['B','#3182CE'],['C','#D69E2E'],['D','#38A169']];
+  return `
+    <div class="topbar"><div><h1>Savol ${d.currentQuestionIndex+1} / ${d.questions.length}</h1><p>Daraja: ${q.level}</p></div>
+      <div class="metric" style="min-width:90px;"><div class="lbl">Vaqt</div><div class="val rose" id="duel-timer">${duelState.timeLeft||DUEL_Q_DURATION}</div></div></div>
+    <div class="card" style="display:flex;justify-content:space-between;margin-bottom:0;">
+      <div>🧑 Siz: <b>${myScore||0}</b></div>
+      <div>${oppName}: <b>${oppScore||0}</b>${duelState.opponentAnswered?' ✅':''}</div>
+    </div>
+    <div class="card"><h3>${promptText}</h3></div>
+    ${duelState.myAnswer ? `
+      <div class="card" style="text-align:center;">
+        <div style="font-size:18px;font-weight:700;color:${duelState.myLastCorrect?'var(--green)':'var(--rose)'};">${duelState.myLastCorrect?"✅ To'g'ri!":"❌ Noto'g'ri"}</div>
+        <div style="margin-top:6px;color:var(--text-dim);">Raqibni kutmoqdamiz...</div>
+      </div>` : `
+      <div class="grid cols-2">
+        ${colors.map(([letter,color])=>`<button onclick="answerDuelQuestion('${letter}')" style="background:${color};color:#fff;border:none;border-radius:12px;padding:22px 14px;font-size:15px;font-weight:700;cursor:pointer;">${optLabels[letter]}</button>`).join('')}
+      </div>`}`;
 }
 
 /* ============ LEADERBOARD ============ */
