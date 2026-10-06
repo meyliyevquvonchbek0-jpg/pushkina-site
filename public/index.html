@@ -532,6 +532,7 @@ const FIELD_MAP = {
   duel_words: {},
   duel_sentences: {},
   teacher_payouts: {teacherId:'teacher_id'},
+  practice_items: {},
   teacher_checkins: {teacherId:'teacher_id', distanceMeters:'distance_meters'},
   flashcard_sets: {teacherId:'teacher_id'},
   students: {userId:'user_id', teacherId:'teacher_id', parentPhone:'parent_phone', telegramChatId:'telegram_chat_id', scheduleSlotId:'schedule_slot_id', onlineRequested:'online_requested', onlineApproved:'online_approved'},
@@ -656,7 +657,8 @@ let DB = {
   videoProgress: [],
   duelWords: [],
   duelSentences: [],
-  teacherPayouts: []
+  teacherPayouts: [],
+  practiceItems: []
 };
 let deferredInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', (e)=>{
@@ -817,7 +819,7 @@ async function boot(){
       users, teachers, students, schedule, attendance, payments, videos,
       materials, announcements, ratings, settingsRows, tests, testQuestions,
       testAttempts, homework, homeworkStatus, rewards, rewardRequests,
-      reviews, dailyTotals, nazoratScores, teacherCheckins, flashcardSets, teacherRatings, dailyWords, botQuestions, videoProgress, teacherPayouts
+      reviews, dailyTotals, nazoratScores, teacherCheckins, flashcardSets, teacherRatings, dailyWords, botQuestions, videoProgress, teacherPayouts, practiceItems
     ] = await Promise.all([
       fetchTable('users_public'), fetchTable('teachers'), fetchTable('students'),
       fetchTable('schedule'), fetchTable('attendance'), fetchTable('payments'),
@@ -828,7 +830,7 @@ async function boot(){
       fetchTable('reviews'), fetchTable('daily_totals'), fetchTable('nazorat_scores'),
       fetchTable('teacher_checkins'), fetchTable('flashcard_sets'), fetchTable('teacher_ratings'),
       fetchTable('daily_words'), fetchTable('bot_questions'), fetchTable('video_progress'),
-      fetchTable('teacher_payouts')
+      fetchTable('teacher_payouts'), fetchTable('practice_items')
     ]);
     DB.users = users; DB.teachers = teachers; DB.students = students;
     DB.schedule = schedule; DB.attendance = attendance; DB.payments = payments;
@@ -845,6 +847,7 @@ async function boot(){
     DB.botQuestions = botQuestions;
     DB.videoProgress = videoProgress;
     DB.teacherPayouts = teacherPayouts;
+    DB.practiceItems = practiceItems;
     try{ renderSocialFloat(); }catch(e){ console.error('renderSocialFloat error', e); }
     try{ renderLandingContent(); }catch(e){ console.error('renderLandingContent error', e); }
     try{ renderLangSwitchers(); }catch(e){ console.error('renderLangSwitchers error', e); }
@@ -1671,6 +1674,7 @@ const NAV = {
     {id:'homework', label:'Uy vazifalari', icon:'📝'},
     {id:'tests', label:'Testlar', icon:'❓'},
     {id:'live-game', label:'🎮 Jonli o\'yin', icon:'🎮'},
+    {id:'practice', label:'🧩 Mashq o\'yinlari', icon:'🧩'},
     {id:'leaderboard', label:'Reyting', icon:'🏆'},
     {id:'rewards', label:'Sovg\'alar', icon:'🎁'},
     {id:'reward-requests', label:'Sovg\'a so\'rovlari', icon:'🎁'},
@@ -1696,6 +1700,7 @@ const NAV = {
     {id:'homework', label:'Uy vazifalari', icon:'📝'},
     {id:'tests', label:'Testlarim', icon:'❓'},
     {id:'live-game', label:'🎮 Jonli o\'yin', icon:'🎮'},
+    {id:'practice', label:'🧩 Mashq o\'yinlari', icon:'🧩'},
     {id:'leaderboard', label:'Reyting', icon:'🏆'},
     {id:'live-class', label:'Onlayn dars', icon:'●'},
     {id:'translator', label:'Tarjimon', icon:'🌐'}
@@ -1708,6 +1713,7 @@ const NAV = {
     {id:'my-review', label:'Sharh qoldirish', icon:'💬'},
     {id:'ai-chat', label:'AI suhbat (Rus/Ingliz)', icon:'🤖'},
     {id:'duel', label:'⚔️ Bellashuv', icon:'⚔️'},
+    {id:'practice', label:'🧩 Mashq o\'yinlari', icon:'🧩'},
     {id:'videos', label:'Video darslar', icon:'▶'},
     {id:'materials', label:'Materiallar', icon:'▤'},
     {id:'homework', label:'Uy vazifalarim', icon:'📝'},
@@ -1801,6 +1807,7 @@ function renderMain(){
   else if(activeTab==='tests') html = renderTests(u);
   else if(activeTab==='live-game') html = renderLiveGame(u);
   else if(activeTab==='duel') html = renderDuel(u);
+  else if(activeTab==='practice') html = renderPractice(u);
   else if(activeTab==='take-test') html = renderTakeTest(u);
   else if(activeTab==='leaderboard') html = renderLeaderboard(u);
   else if(activeTab==='rewards') html = renderRewards(u);
@@ -5504,6 +5511,171 @@ function leaveDuel(){
   duelState = { phase:'menu', mode:'word', onlineStudents:duelState.onlineStudents, incomingInvite:null, duelId:null, duel:null, myAnswer:null, myLastCorrect:null, duelChannel:null, timerInterval:null, timeLeft:0, opponentAnswered:false };
   renderMain();
 }
+// ============ MASHQ O'YINLARI (Wordwall uslubi) ============
+const practiceState = { game:null, theme:null, items:[], idx:0, score:0, mistakes:0, answered:false, picked:null, left:[], right:[], selL:null, selR:null, matched:[], done:false };
+function practiceShuffle(a){ const r=a.slice(); for(let i=r.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [r[i],r[j]]=[r[j],r[i]]; } return r; }
+function practiceThemes(game){ return [...new Set(DB.practiceItems.filter(x=>x.game===game).map(x=>x.theme||'Umumiy'))]; }
+function practiceReset(){ practiceState._optCache=null; Object.assign(practiceState,{game:null,theme:null,items:[],idx:0,score:0,mistakes:0,answered:false,picked:null,left:[],right:[],selL:null,selR:null,matched:[],done:false}); }
+function practiceStart(game, theme){
+  const pool = DB.practiceItems.filter(x=>x.game===game && (theme==='__all__' || (x.theme||'Umumiy')===theme));
+  if(pool.length < 2){ alert('Bu mavzuda mashq yetarli emas'); return; }
+  practiceReset();
+  practiceState.game = game; practiceState.theme = theme;
+  if(game==='pic'){ practiceNextRound(pool); }
+  else { practiceState.items = practiceShuffle(pool).slice(0,10); }
+  renderMain();
+}
+function practiceNextRound(pool){
+  pool = pool || DB.practiceItems.filter(x=>x.game==='pic' && (practiceState.theme==='__all__' || (x.theme||'Umumiy')===practiceState.theme));
+  const six = practiceShuffle(pool).slice(0,6);
+  practiceState.items = six;
+  practiceState.left = practiceShuffle(six.map((x,i)=>i));
+  practiceState.right = practiceShuffle(six.map((x,i)=>i));
+  practiceState.selL = null; practiceState.selR = null; practiceState.matched = [];
+}
+function practicePickL(i){ if(practiceState.matched.includes(i)) return; practiceState.selL = i; practiceCheckPair(); }
+function practicePickR(i){ if(practiceState.matched.includes(i)) return; practiceState.selR = i; practiceCheckPair(); }
+function practiceCheckPair(){
+  const s = practiceState;
+  if(s.selL===null || s.selR===null){ renderMain(); return; }
+  if(s.selL===s.selR){ s.matched.push(s.selL); s.score++; s.selL=null; s.selR=null; renderMain(); }
+  else { s.mistakes++; const l=s.selL, r=s.selR; renderMain(); const a=document.getElementById('pl-'+l), b=document.getElementById('pr-'+r); if(a) a.classList.add('p-wrong'); if(b) b.classList.add('p-wrong'); s.selL=null; s.selR=null; setTimeout(()=>{ if(activeTab==='practice') renderMain(); }, 600); }
+}
+function practiceAnswer(opt){
+  const s = practiceState; if(s.answered) return;
+  const it = s.items[s.idx]; s.answered = true; s.picked = opt;
+  if(opt===it.answer) s.score++; else s.mistakes++;
+  renderMain();
+}
+function practiceNext(){
+  const s = practiceState; s._optCache=null; s.idx++; s.answered=false; s.picked=null;
+  if(s.idx>=s.items.length) s.done = true;
+  renderMain();
+}
+function practiceManageHtml(){
+  const items = DB.practiceItems;
+  const themes = [...new Set(items.map(x=>x.game+'|'+(x.theme||'Umumiy')))];
+  return `
+    <div class="card">
+      <h3>⚙️ Mashq kontentini boshqarish</h3>
+      <p style="color:var(--text-dim);margin:6px 0 12px;font-size:13px;">Yangi rasm-so'z juftligi yoki predlog gapini qo'shing. O'quvchilarda darhol ko'rinadi.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+        <button class="btn gold sm" onclick="openPracticeAddModal('pic')">+ Rasm ↔ So'z</button>
+        <button class="btn gold sm" onclick="openPracticeAddModal('prep')">+ Predlog gapi</button>
+      </div>
+      ${themes.map(k=>{ const [g,th]=k.split('|'); const list=items.filter(x=>x.game===g && (x.theme||'Umumiy')===th);
+        return `<details style="margin-bottom:8px;"><summary style="cursor:pointer;font-weight:600;">${g==='pic'?'🖼️':'✍️'} ${th} (${list.length})</summary>
+          <div style="margin-top:8px;">${list.map(x=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:14px;"><span>${x.prompt} → <b>${x.answer}</b></span><button class="icon-btn rose" onclick="deletePracticeItem('${x.id}')">O'chirish</button></div>`).join('')}</div></details>`; }).join('') || '<div class="empty">Hali kontent yo\'q</div>'}
+    </div>`;
+}
+function openPracticeAddModal(game){
+  const themeOpts = [...new Set(DB.practiceItems.filter(x=>x.game===game).map(x=>x.theme||'Umumiy'))].map(x=>`<option value="${x}">`).join('');
+  const bg = document.createElement('div'); bg.className='modal-bg';
+  bg.innerHTML = `<div class="modal">
+    <h3>${game==='pic'?"Rasm ↔ So'z qo'shish":"Predlog gapi qo'shish"}</h3>
+    <label>Mavzu</label><input type="text" id="pr-theme" list="pr-themes" placeholder="masalan: Mebel"><datalist id="pr-themes">${themeOpts}</datalist>
+    ${game==='pic' ? `
+      <label>Rasm (emoji)</label><input type="text" id="pr-prompt" placeholder="🪑" maxlength="8">
+      <div class="hint">Emoji'ni telefon/kompyuter klaviaturasidan tanlang (Windows: Win + . )</div>
+      <label>Ruscha so'z</label><input type="text" id="pr-answer" placeholder="стул">` : `
+      <label>Gap (bo'sh joy o'rniga ___ yozing)</label><input type="text" id="pr-prompt" placeholder="Книга лежит ___ столе.">
+      <label>To'g'ri predlog</label><input type="text" id="pr-answer" placeholder="на">
+      <label>Noto'g'ri variantlar (vergul bilan, 2-3 ta)</label><input type="text" id="pr-wrong" placeholder="в, под, из">
+      <label>O'zbekcha izoh (ixtiyoriy)</label><input type="text" id="pr-hint" placeholder="Kitob stol ustida yotibdi">`}
+    <div class="err" id="pr-err"></div>
+    <div class="modal-actions">
+      <button class="btn outline" onclick="this.closest('.modal-bg').remove()">Bekor qilish</button>
+      <button class="btn gold" onclick="savePracticeItem('${game}')">Saqlash</button>
+    </div></div>`;
+  document.body.appendChild(bg);
+}
+async function savePracticeItem(game){
+  const g = id=>((document.getElementById(id)||{}).value||'').trim();
+  const err = document.getElementById('pr-err');
+  const theme = g('pr-theme')||'Umumiy', prompt = g('pr-prompt'), answer = g('pr-answer');
+  if(!prompt || !answer){ err.textContent = "Barcha majburiy maydonlarni to'ldiring"; return; }
+  let options = null, hint = null;
+  if(game==='prep'){
+    if(!prompt.includes('___')){ err.textContent = "Gapda ___ (bo'sh joy) bo'lishi kerak"; return; }
+    const wrong = g('pr-wrong').split(',').map(x=>x.trim()).filter(Boolean);
+    if(wrong.length<1){ err.textContent = "Kamida 1 ta noto'g'ri variant yozing"; return; }
+    options = [answer, ...wrong].join('|'); hint = g('pr-hint') || null;
+  }
+  try{
+    const row = await insertRow('practice_items', {game, theme, prompt, answer, options, hint});
+    DB.practiceItems.push(row);
+    document.querySelector('.modal-bg').remove();
+    renderMain();
+  }catch(e){ console.error(e); err.textContent = "Saqlashda xatolik. SQL (practice_games_migration) ishga tushganini tekshiring."; }
+}
+async function deletePracticeItem(id){
+  if(!confirm("O'chirilsinmi?")) return;
+  try{ await deleteRow('practice_items', id); DB.practiceItems = DB.practiceItems.filter(x=>x.id!==id); renderMain(); }
+  catch(e){ console.error(e); alert("O'chirishda xatolik"); }
+}
+
+function renderPractice(u){
+  const s = practiceState;
+  const style = `<style>.p-card{padding:14px 10px;border:2px solid var(--border,#ddd);border-radius:12px;text-align:center;cursor:pointer;background:var(--card,#fff);font-size:18px;transition:.15s;user-select:none}.p-card:hover{border-color:var(--gold)}.p-sel{border-color:var(--gold);background:rgba(212,175,55,.15)}.p-ok{border-color:#2e9e5b;background:rgba(46,158,91,.18);cursor:default;opacity:.7}.p-wrong{border-color:#d33;background:rgba(211,51,51,.18);animation:pshake .3s}@keyframes pshake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}.p-emoji{font-size:44px;line-height:1.1}.p-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}</style>`;
+  if(!s.game){
+    const themeBtns = (game)=> practiceThemes(game).map(th=>`<button class="btn sm outline" data-th="${encodeURIComponent(th)}" onclick="practiceStart('${game}',decodeURIComponent(this.dataset.th))">${th}</button>`).join('') || '<span class="empty">Hozircha mashq yo\'q</span>';
+    return `${style}
+      <div class="topbar"><div><h1>🧩 Mashq o'yinlari</h1><p>Yakka mashq qiling va bilimingizni sinang</p></div></div>
+      <div class="card">
+        <h3>🖼️ Rasm ↔ So'z</h3>
+        <p style="color:var(--muted);margin:6px 0 12px;">Rasmni mos ruscha so'z bilan juftlang.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">${themeBtns('pic')}</div>
+      </div>
+      <div class="card">
+        <h3>✍️ Gapdagi predlogni tanlang</h3>
+        <p style="color:var(--muted);margin:6px 0 12px;">Gapdagi bo'sh joyga to'g'ri predlogni qo'ying.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">${themeBtns('prep')}</div>
+      </div>
+      ${u.role!=='student' ? practiceManageHtml() : ''}`;
+  }
+  const back = `<button class="btn outline sm" onclick="practiceReset();renderMain();">← Orqaga</button>`;
+  if(s.game==='pic'){
+    const all = s.matched.length===s.items.length;
+    return `${style}
+      <div class="topbar"><div><h1>🖼️ Rasm ↔ So'z</h1><p>To'g'ri: ${s.score} · Xato: ${s.mistakes}</p></div>${back}</div>
+      <div class="card">
+        <div class="p-grid">
+          <div style="display:flex;flex-direction:column;gap:10px;">${s.left.map(i=>`<div id="pl-${i}" class="p-card p-emoji ${s.matched.includes(i)?'p-ok':''} ${s.selL===i?'p-sel':''}" onclick="practicePickL(${i})">${s.items[i].prompt}</div>`).join('')}</div>
+          <div style="display:flex;flex-direction:column;gap:10px;">${s.right.map(i=>`<div id="pr-${i}" class="p-card ${s.matched.includes(i)?'p-ok':''} ${s.selR===i?'p-sel':''}" style="display:flex;align-items:center;justify-content:center;min-height:68px;" onclick="practicePickR(${i})">${s.items[i].answer}</div>`).join('')}</div>
+        </div>
+        ${all?`<div style="text-align:center;margin-top:16px;"><div style="font-size:20px;margin-bottom:10px;">🎉 Barakalla!</div><button class="btn gold" onclick="practiceNextRound();renderMain();">Keyingi 6 ta →</button></div>`:''}
+      </div>`;
+  }
+  // prep
+  if(s.done){
+    const total = s.items.length;
+    return `${style}
+      <div class="topbar"><div><h1>✍️ Natija</h1></div></div>
+      <div class="card" style="text-align:center;">
+        <div style="font-size:48px;">${s.score>=total*0.8?'🏆':s.score>=total*0.5?'👍':'📚'}</div>
+        <div style="font-size:22px;margin:10px 0;">${s.score} / ${total}</div>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+          <button class="btn gold" onclick="practiceStart('prep',practiceState.theme)">Qayta urinish</button>
+          <button class="btn outline" onclick="practiceReset();renderMain();">Mavzularga qaytish</button>
+        </div>
+      </div>`;
+  }
+  const it = s.items[s.idx];
+  const opts = practiceShuffle((it.options||'').split('|').map(x=>x.trim()).filter(Boolean));
+  if(!opts.includes(it.answer)) opts.push(it.answer);
+  if(!s._optCache || s._optCache.idx!==s.idx || s._optCache.game!==s.game){ s._optCache = {idx:s.idx, game:s.game, list:opts}; }
+  const list = s._optCache.list;
+  const sentence = (it.prompt||'').replace('___', `<b style="color:var(--gold);border-bottom:2px solid var(--gold);padding:0 8px;">${s.answered?it.answer:'____'}</b>`);
+  return `${style}
+    <div class="topbar"><div><h1>✍️ Predlogni tanlang</h1><p>${s.idx+1} / ${s.items.length} · To'g'ri: ${s.score}</p></div>${back}</div>
+    <div class="card">
+      <div style="font-size:22px;text-align:center;margin:10px 0 6px;">${sentence}</div>
+      ${it.hint?`<div style="text-align:center;color:var(--muted);margin-bottom:14px;">${it.hint}</div>`:'<div style="margin-bottom:14px;"></div>'}
+      <div class="p-grid">${list.map(o=>{ let cls=''; if(s.answered){ if(o===it.answer) cls='p-ok'; else if(o===s.picked) cls='p-wrong'; } return `<div class="p-card ${cls}" data-o="${encodeURIComponent(o)}" onclick="practiceAnswer(decodeURIComponent(this.dataset.o))">${o}</div>`; }).join('')}</div>
+      ${s.answered?`<div style="text-align:center;margin-top:16px;"><div style="margin-bottom:10px;">${s.picked===it.answer?'✅ To\'g\'ri!':'❌ To\'g\'ri javob: <b>'+it.answer+'</b>'}</div><button class="btn gold" onclick="practiceNext()">${s.idx+1>=s.items.length?'Natijani ko\'rish':'Keyingi →'}</button></div>`:''}
+    </div>`;
+}
+
 function renderDuel(u){
   setupDuelPresenceAndInvites();
   const inviteBanner = duelState.incomingInvite ? `
