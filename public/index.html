@@ -2859,6 +2859,7 @@ function renderNazoratBlock(teacherId, isEditable, showLabel){
         <button class="btn sm outline" onclick="exportDailyGradesCSV('${teacherId}')">📤 Kunlik jadvalni Excel'ga eksport</button>
         <button class="btn sm outline" onclick="exportAllNazoratReport('${teacherId}')">📊 Barcha nazoratlar hisoboti</button>
       </div>
+      <div style="margin:2px 0 10px;font-size:13.5px;">${currentSession ? `<span class="pill green">Hozirgi nazorat: <b>${currentSession.title||'(nomsiz)'}</b> — ${currentSession.totalTasks||0} ta savol</span>` : `<span class="pill gray">Hozircha nazorat tanlanmagan — nomi va savollar sonini kiritib «Saqlash» ni bosing</span>`}</div>
       <div class="hint">Nazorat nomi va savollar sonini kiritish shart emas — faqat kunlik nazorat o'tkazgan kunlarda to'ldiring. Bir kunda bir nechta nazorat bo'lsa, "➕ Bugungi yangi nazorat qo'shish" ni tanlab, yangisini kiriting — eskisi bazada saqlanib qoladi. Avvalgi nazoratdan tanlab qayta o'tkazsangiz, o'quvchilarning o'sha nazorat bo'yicha o'rtacha natijasi pastdagi jadvalda avtomatik ko'rinadi.</div>
     </div>`;
 }
@@ -2915,7 +2916,7 @@ function renderAttendance(u){
           const hasData = DB.attendance.some(a=>a.date===d && poolIds.includes(a.studentId));
           const isSelected = d===selectedAttendanceDate;
           const isToday = d===today;
-          return `<div ${isFuture?'':`onclick="selectedAttendanceDate='${d}';renderMain();"`} style="
+          return `<div ${isFuture?'':`onclick="selectedAttendanceDate='${d}';activeNazoratSession={};renderMain();"`} style="
             text-align:center;padding:8px 0 6px;border-radius:8px;font-size:12.5px;cursor:${isFuture?'default':'pointer'};
             background:${isSelected?'var(--navy)':'transparent'};
             color:${isSelected?'#fff':(isFuture?'var(--text-dim)':'var(--ink)')};
@@ -3077,20 +3078,29 @@ async function saveDailyTotal(teacherId){
   const totalTasks = Number(val)||0;
   const title = document.getElementById('nazorat-title-input-'+teacherId).value.trim();
   const date = selectedAttendanceDate;
+  if(!title && !totalTasks){ alert("Nazorat nomini yoki savollar sonini kiriting."); return; }
+  if(!totalTasks){ alert("Savollar sonini kiriting (masalan: 10) — usiz o'quvchilar natijasini yozib bo'lmaydi."); return; }
   const currentSession = getActiveSessionForTeacherToday(teacherId);
-  if(currentSession){
-    await updateRow('daily_totals', currentSession.id, {totalTasks, title});
-    currentSession.totalTasks = totalTasks;
-    currentSession.title = title;
-  }else{
-    const newRec = await insertRow('daily_totals', {teacherId, date, totalTasks, title});
-    DB.dailyTotals.push(newRec);
-    activeNazoratSession[teacherId] = newRec.id;
+  try{
+    if(currentSession){
+      await updateRow('daily_totals', currentSession.id, {totalTasks, title});
+      currentSession.totalTasks = totalTasks;
+      currentSession.title = title;
+    }else{
+      const newRec = await insertRow('daily_totals', {teacherId, date, totalTasks, title});
+      DB.dailyTotals.push(newRec);
+      activeNazoratSession[teacherId] = newRec.id;
+    }
+  }catch(e){
+    console.error('saveDailyTotal', e);
+    alert("Nazoratni saqlab bo'lmadi: " + ((e && (e.message||e.details)) || 'noma\'lum xato') + "\n\nnazorat_fix.sql ni Supabase'da ishga tushiring.");
+    return;
   }
   renderMain();
 }
 async function saveNazoratScore(sessionId, studentId, value, totalTasks){
-  const tasksDone = Math.min(Number(value)||0, totalTasks);
+  const tasksDone = Math.min(Math.max(Number(value)||0,0), totalTasks);
+  try{
   let rec = DB.nazoratScores.find(ns=>ns.sessionId===sessionId && ns.studentId===studentId);
   const prevTasksDone = rec ? rec.tasksDone : null;
   const prevCoin = (prevTasksDone!=null && totalTasks) ? Math.round((prevTasksDone/totalTasks)*10) : 0;
@@ -3108,6 +3118,10 @@ async function saveNazoratScore(sessionId, studentId, value, totalTasks){
     const newCoins = Math.max(0, (s.coins||0) + delta);
     await updateRow('students', s.id, {coins:newCoins});
     s.coins = newCoins;
+  }
+  }catch(e){
+    console.error('saveNazoratScore', e);
+    alert("Natijani saqlab bo'lmadi: " + ((e && (e.message||e.details)) || "noma'lum xato") + "\n\nnazorat_fix.sql ni Supabase'da ishga tushiring.");
   }
   renderMain();
 }
