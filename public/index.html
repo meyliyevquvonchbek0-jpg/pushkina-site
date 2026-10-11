@@ -5541,83 +5541,248 @@ function leaveDuel(){
   duelState = { phase:'menu', mode:'word', onlineStudents:duelState.onlineStudents, incomingInvite:null, duelId:null, duel:null, myAnswer:null, myLastCorrect:null, duelChannel:null, timerInterval:null, timeLeft:0, opponentAnswered:false };
   renderMain();
 }
-// ============ MASHQ O'YINLARI (Wordwall uslubi) ============
-const practiceState = { lang:null, themePick:null, level:'easy', game:null, theme:null, items:[], idx:0, score:0, mistakes:0, answered:false, picked:null, left:[], right:[], selL:null, selR:null, matched:[], done:false };
+// ============ MASHQ O'YINLARI (A1–C1, ko'p o'yinli) ============
+const CEFR = ['A1','A2','B1','B2','C1'];
+const practiceState = { lang:null, themePick:null, level:'A1', uid:null, game:null, theme:null, items:[], idx:0, score:0, mistakes:0, answered:false, picked:null, left:[], right:[], selL:null, selR:null, matched:[], done:false, cards:[], flipped:[], moves:0, lock:false, timer:null, timeLeft:60, typed:'', hintUsed:false, letters:[], built:[], queue:[], round:0, result:null, pool:[] };
+const P_GAMES = {
+  match:  {ico:'🖼️', name:"Juftlash",           desc:"So'zni rasm yoki ma'no bilan juftlang.", src:'pic', min:4},
+  memory: {ico:'🃏', name:"Xotira kartalari",   desc:"Kartalarni oching, juftini toping.",      src:'pic', min:4},
+  write:  {ico:'⌨️', name:"Yozing",             desc:"Rasm yoki ma'noga qarab so'zni yozing.", src:'pic', min:3},
+  quiz:   {ico:'⏱️', name:"Tezkor viktorina",   desc:"60 soniyada iloji boricha ko'p javob bering.", src:'pic', min:4},
+  anagram:{ico:'🔤', name:"Harflardan so'z",    desc:"Aralash harflardan so'z yig'ing.",        src:'pic', min:3},
+  listen: {ico:'🎧', name:"Eshitib toping",     desc:"So'zni eshiting va to'g'risini tanlang.", src:'pic', min:4},
+  odd:    {ico:'🕵️', name:"Ortiqchasini toping",desc:"Mavzuga mos kelmaydigan so'zni toping.",  src:'pic', min:4},
+  prep:   {ico:'✍️', name:"Predlogni tanlang",  desc:"Bo'sh joyga to'g'ri predlogni qo'ying.",  src:'prep', min:2},
+  case:   {ico:'📐', name:"Padejlar",           desc:"So'zni to'g'ri kelishikda tanlang.",      src:'case', min:2},
+  cloze:  {ico:'🧩', name:"Gapni to'ldiring",   desc:"Bo'sh joyga mos so'zni tanlang.",         src:'cloze', min:2},
+  syn:    {ico:'🔗', name:"Sinonim / ma'no",    desc:"Sinonim, antonim yoki ma'nosini toping.", src:'syn', min:3}
+};
 function practiceShuffle(a){ const r=a.slice(); for(let i=r.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [r[i],r[j]]=[r[j],r[i]]; } return r; }
+function pEmoji(t){ try{ return /\p{Extended_Pictographic}|⃣/u.test(t||''); }catch(e){ return false; } }
+function pShow(t){ return pEmoji(t) ? `<span class="p-emoji">${t}</span>` : `<span class="p-txt">${t}</span>`; }
+function pCefr(x){ return x.cefr || (x.game==='pic' ? (x.level==='hard'?'A2':'A1') : (x.level==='hard'?'B1':'A2')); }
 function practiceLangOk(x){ return (x.lang||'ru')===practiceState.lang; }
+function practiceLevelOk(x){ const L=practiceState.level; return L==='all' || pCefr(x)===L; }
+function pPool(src, theme){ return DB.practiceItems.filter(x=>x.game===src && practiceLangOk(x) && practiceLevelOk(x) && (x.theme||'Umumiy')===theme); }
+function pStore(k,d){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(e){ return d; } }
+function pSave(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+function pStars(uid){ return pStore('pstars_'+uid,{}); }
+function pStreakInfo(uid){ return pStore('pstreak_'+uid,{last:'',n:0}); }
+function pToday(d){ d=d||new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function pSpeak(text){ try{ if(!('speechSynthesis' in window)) return false; window.speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.lang = practiceState.lang==='en'?'en-US':'ru-RU'; u.rate=0.85; window.speechSynthesis.speak(u); return true; }catch(e){ return false; } }
+function pOptions(ans, cand, fallback, n){
+  n = n||4; const seen = new Set([ans]); const out = [];
+  for(const c of practiceShuffle(cand||[])){ if(c && !seen.has(c)){ seen.add(c); out.push(c); if(out.length>=n-1) break; } }
+  if(out.length<n-1){ for(const c of practiceShuffle(fallback||[])){ if(c && !seen.has(c)){ seen.add(c); out.push(c); if(out.length>=n-1) break; } } }
+  return practiceShuffle([ans, ...out]);
+}
+function pStarsRatio(c,t){ const r = t?c/t:0; return r>=0.9?3 : r>=0.7?2 : r>=0.4?1 : 0; }
 function practiceHome(){ practiceReset(); practiceState.lang=null; practiceState.themePick=null; renderMain(); }
-function practiceLevelOk(x){ return practiceState.level==='all' || (x.level||'easy')===practiceState.level; }
-function practiceThemes(game){ return [...new Set(DB.practiceItems.filter(x=>x.game===game && practiceLangOk(x) && practiceLevelOk(x)).map(x=>x.theme||'Umumiy'))]; }
-function practiceReset(){ practiceState._optCache=null; Object.assign(practiceState,{game:null,theme:null,items:[],idx:0,score:0,mistakes:0,answered:false,picked:null,left:[],right:[],selL:null,selR:null,matched:[],done:false}); }
-function practiceStart(game, theme){
-  const pool = DB.practiceItems.filter(x=>x.game===game && practiceLangOk(x) && practiceLevelOk(x) && (theme==='__all__' || (x.theme||'Umumiy')===theme));
-  if(pool.length < 2){ alert('Bu mavzuda mashq yetarli emas'); return; }
-  practiceReset();
-  practiceState.game = game; practiceState.theme = theme;
-  if(game==='pic'){ practiceNextRound(pool); }
-  else { practiceState.items = practiceShuffle(pool).slice(0,10); }
+function practiceReset(){
+  const s = practiceState; if(s.timer){ clearInterval(s.timer); }
+  Object.assign(s,{game:null,theme:null,items:[],idx:0,score:0,mistakes:0,answered:false,picked:null,left:[],right:[],selL:null,selR:null,matched:[],done:false,cards:[],flipped:[],moves:0,lock:false,timer:null,timeLeft:60,typed:'',hintUsed:false,letters:[],built:[],queue:[],round:0,result:null,pool:[]});
+}
+function practiceFinish(correct, total, stars, line){
+  const s = practiceState; if(s.timer){ clearInterval(s.timer); s.timer=null; }
+  s.done = true;
+  const key = s.lang+'|'+s.theme+'|'+s.game;
+  const m = pStars(s.uid); const prev = m[key]||0;
+  if(stars>prev){ m[key]=stars; pSave('pstars_'+s.uid, m); }
+  const st = pStreakInfo(s.uid); const today = pToday();
+  if(st.last!==today){ st.n = (st.last===pToday(new Date(Date.now()-864e5))) ? st.n+1 : 1; st.last = today; pSave('pstreak_'+s.uid, st); }
+  let coinMsg = '';
+  if(stars===3 && prev<3){
+    const stu = (DB.students||[]).find(x=>x.userId===s.uid);
+    if(stu){ coinMsg = '+2 🪙'; (async()=>{ try{ const nc=(stu.coins||0)+2; await updateRow('students', stu.id, {coins:nc}); stu.coins=nc; }catch(e){ console.error(e); } })(); }
+  }
+  s.result = {correct, total, stars, streak:st.n, coinMsg, line:line||''};
+}
+function practiceThemeStars(theme){
+  const m = pStars(practiceState.uid); let got=0, max=0;
+  Object.keys(P_GAMES).forEach(g=>{ const def=P_GAMES[g]; if(pPool(def.src,theme).length>=def.min){ max+=3; got+=(m[practiceState.lang+'|'+theme+'|'+g]||0); } });
+  return {got,max};
+}
+// ---- boshlash ----
+function pChoiceFromItems(g, pool){
+  const allAns = pool.map(y=>y.answer);
+  return practiceShuffle(pool).slice(0,10).map(x=>{
+    let opts = (x.options||'').split('|').map(o=>o.trim()).filter(Boolean);
+    if(!opts.includes(x.answer)) opts.push(x.answer);
+    if(opts.length<3) opts = pOptions(x.answer, allAns, [], 4);
+    return {prompt:x.prompt, answer:x.answer, hint:x.hint, opts:practiceShuffle([...new Set(opts)])};
+  });
+}
+function practiceStart(g, theme){
+  const def = P_GAMES[g]; if(!def) return;
+  const pool = pPool(def.src, theme);
+  if(pool.length < def.min){ alert('Bu mavzuda mashq yetarli emas'); return; }
+  const allPrompts = DB.practiceItems.filter(x=>x.game==='pic' && practiceLangOk(x)).map(x=>x.prompt);
+  const allAnswers = DB.practiceItems.filter(x=>x.game==='pic' && practiceLangOk(x)).map(x=>x.answer);
+  practiceReset(); const s = practiceState; s.game=g; s.theme=theme; s.pool=pool;
+  if(g==='match'){ s.queue = practiceShuffle(pool).slice(0,12); practiceNextRound(); }
+  else if(g==='memory'){
+    const six = practiceShuffle(pool).slice(0,6); s.items = six; const cards = [];
+    six.forEach((x,i)=>{ cards.push({k:i,t:'p',c:x.prompt}); cards.push({k:i,t:'a',c:x.answer}); });
+    s.cards = practiceShuffle(cards);
+  }
+  else if(g==='write'){ s.items = practiceShuffle(pool).slice(0,8); }
+  else if(g==='anagram'){
+    const ok = pool.filter(x=>/^[^\s\-]{3,12}$/.test(x.answer));
+    if(ok.length<3){ practiceReset(); alert("Bu mavzuda harf o'yini uchun so'z yetarli emas"); return; }
+    s.items = practiceShuffle(ok).slice(0,8); pAnaInit();
+  }
+  else if(g==='quiz'){
+    let list = []; for(let r=0;r<3;r++) list = list.concat(practiceShuffle(pool));
+    s.items = list.map(x=>({prompt:x.prompt, answer:x.answer, hint:x.hint, opts:pOptions(x.answer, pool.map(y=>y.answer), allAnswers, 4)}));
+    s.timeLeft = 60;
+    s.timer = setInterval(()=>{
+      if(activeTab!=='practice' || practiceState.game!=='quiz' || practiceState.done){ clearInterval(s.timer); s.timer=null; return; }
+      s.timeLeft--; const el=document.getElementById('p-timer'); if(el) el.textContent = s.timeLeft;
+      if(s.timeLeft<=0){ const c=s.score, tot=s.score+s.mistakes; practiceFinish(c, tot, c>=12?3:c>=8?2:c>=4?1:0, "60 soniyada to'g'ri javoblar: "+c); renderMain(); }
+    },1000);
+  }
+  else if(g==='listen'){
+    s.items = practiceShuffle(pool).slice(0,8).map(x=>({speak:x.answer, prompt:'', answer:x.prompt, opts:pOptions(x.prompt, pool.map(y=>y.prompt), allPrompts, 4)}));
+  }
+  else if(g==='odd'){
+    const themeAns = new Set(pool.map(x=>x.answer));
+    const others = DB.practiceItems.filter(x=>x.game==='pic' && practiceLangOk(x) && (x.theme||'Umumiy')!==theme && !themeAns.has(x.answer));
+    const oa = [...new Set(others.map(x=>x.answer))];
+    const uniq = [...new Set(pool.map(x=>x.answer))];
+    if(uniq.length<3 || oa.length<1){ practiceReset(); alert("Bu o'yin uchun so'zlar yetarli emas"); return; }
+    const rounds = []; for(let i=0;i<8;i++){ const three = practiceShuffle(uniq).slice(0,3); const odd = oa[Math.floor(Math.random()*oa.length)]; rounds.push({prompt:"Qaysi so'z «"+theme+"» mavzusiga mos kelmaydi?", answer:odd, hint:'', opts:practiceShuffle([...three, odd])}); }
+    s.items = rounds;
+  }
+  else { s.items = pChoiceFromItems(g, pool); }
   renderMain();
+  if(g==='listen') setTimeout(()=>{ if(practiceState.game==='listen' && !practiceState.done){ pSpeak(practiceState.items[practiceState.idx].speak); } }, 250);
 }
-function practiceNextRound(pool){
-  pool = pool || DB.practiceItems.filter(x=>x.game==='pic' && practiceLangOk(x) && practiceLevelOk(x) && (practiceState.theme==='__all__' || (x.theme||'Umumiy')===practiceState.theme));
-  const six = practiceShuffle(pool).slice(0,6);
-  practiceState.items = six;
-  practiceState.left = practiceShuffle(six.map((x,i)=>i));
-  practiceState.right = practiceShuffle(six.map((x,i)=>i));
-  practiceState.selL = null; practiceState.selR = null; practiceState.matched = [];
+// ---- juftlash ----
+function practiceNextRound(){
+  const s = practiceState;
+  if(s.queue.length<2){ const tot=s.score+s.mistakes; practiceFinish(s.score, tot, pStarsRatio(s.score, tot), 'Topilgan juftliklar: '+s.score+', xato: '+s.mistakes); return; }
+  const six = s.queue.splice(0,6); s.round++;
+  s.items = six; s.left = practiceShuffle(six.map((x,i)=>i)); s.right = practiceShuffle(six.map((x,i)=>i));
+  s.selL=null; s.selR=null; s.matched=[];
 }
-function practicePickL(i){ if(practiceState.matched.includes(i)) return; practiceState.selL = i; practiceCheckPair(); }
-function practicePickR(i){ if(practiceState.matched.includes(i)) return; practiceState.selR = i; practiceCheckPair(); }
+function practicePickL(i){ if(practiceState.matched.includes(i)) return; practiceState.selL=i; practiceCheckPair(); }
+function practicePickR(i){ if(practiceState.matched.includes(i)) return; practiceState.selR=i; practiceCheckPair(); }
 function practiceCheckPair(){
   const s = practiceState;
   if(s.selL===null || s.selR===null){ renderMain(); return; }
   if(s.selL===s.selR){ s.matched.push(s.selL); s.score++; s.selL=null; s.selR=null; renderMain(); }
-  else { s.mistakes++; const l=s.selL, r=s.selR; renderMain(); const a=document.getElementById('pl-'+l), b=document.getElementById('pr-'+r); if(a) a.classList.add('p-wrong'); if(b) b.classList.add('p-wrong'); s.selL=null; s.selR=null; setTimeout(()=>{ if(activeTab==='practice') renderMain(); }, 600); }
+  else { s.mistakes++; const l=s.selL, r=s.selR; renderMain(); const a=document.getElementById('pl-'+l), b=document.getElementById('pr-'+r); if(a) a.classList.add('p-wrong'); if(b) b.classList.add('p-wrong'); s.selL=null; s.selR=null; setTimeout(()=>{ if(activeTab==='practice' && s.game==='match') renderMain(); }, 600); }
 }
+// ---- xotira ----
+function practiceFlip(i){
+  const s = practiceState; if(s.lock || s.flipped.includes(i) || s.matched.includes(i)) return;
+  s.flipped.push(i);
+  if(s.flipped.length<2){ renderMain(); return; }
+  s.moves++; const [a,b] = s.flipped; const ca=s.cards[a], cb=s.cards[b];
+  if(ca.k===cb.k && ca.t!==cb.t){
+    s.matched.push(a,b); s.flipped=[]; s.score++;
+    if(s.matched.length===s.cards.length){ const n=s.items.length, m=s.moves; practiceFinish(n, m, m<=n+3?3:(m<=n*2+1?2:1), 'Yurishlar soni: '+m); }
+    renderMain();
+  } else {
+    s.lock=true; s.mistakes++; renderMain();
+    setTimeout(()=>{ s.flipped=[]; s.lock=false; if(activeTab==='practice' && s.game==='memory') renderMain(); }, 900);
+  }
+}
+// ---- yozish ----
+function practiceHint(){ const s=practiceState; s.hintUsed=true; const el=document.getElementById('p-in'); const v=el?el.value:''; s.typed=v; renderMain(); }
+function practiceCheckWrite(){
+  const s = practiceState; if(s.answered) return;
+  const el = document.getElementById('p-in'); const v = (el?el.value:'').trim(); if(!v) return;
+  const n = x=>String(x).toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ').trim();
+  s.typed = v; s.answered = true; const ok = n(v)===n(s.items[s.idx].answer); s.picked = ok;
+  if(ok) s.score++; else s.mistakes++;
+  renderMain();
+}
+// ---- anagramma ----
+function pAnaInit(){
+  const s = practiceState; const ans = s.items[s.idx].answer;
+  let letters = [...ans].map((c,i)=>({c,i})), tries = 0;
+  do{ letters = practiceShuffle(letters); tries++; } while(letters.map(l=>l.c).join('')===ans && tries<8);
+  s.letters = letters; s.built = [];
+}
+function practiceAnaPick(j){
+  const s = practiceState; if(s.answered || s.built.includes(j)) return;
+  s.built.push(j);
+  if(s.built.length===s.letters.length){
+    const guess = s.built.map(k=>s.letters[k].c).join('').toLowerCase();
+    s.answered = true; s.picked = (guess===s.items[s.idx].answer.toLowerCase());
+    if(s.picked) s.score++; else s.mistakes++;
+  }
+  renderMain();
+}
+function practiceAnaUndo(){ const s=practiceState; if(s.answered) return; s.built.pop(); renderMain(); }
+// ---- tanlash (choice) ----
 function practiceAnswer(opt){
   const s = practiceState; if(s.answered) return;
   const it = s.items[s.idx]; s.answered = true; s.picked = opt;
   if(opt===it.answer) s.score++; else s.mistakes++;
   renderMain();
+  if(s.game==='quiz'){ const at=s.idx; setTimeout(()=>{ if(practiceState.game==='quiz' && !practiceState.done && practiceState.idx===at) practiceNext(); }, 550); }
 }
 function practiceNext(){
-  const s = practiceState; s._optCache=null; s.idx++; s.answered=false; s.picked=null;
-  if(s.idx>=s.items.length) s.done = true;
+  const s = practiceState; s.idx++; s.answered=false; s.picked=null; s.typed=''; s.hintUsed=false;
+  if(s.idx>=s.items.length){
+    if(s.game==='quiz'){ const c=s.score; practiceFinish(c, s.score+s.mistakes, c>=12?3:c>=8?2:c>=4?1:0, "60 soniyada to'g'ri javoblar: "+c); }
+    else practiceFinish(s.score, s.items.length, pStarsRatio(s.score, s.items.length), '');
+    renderMain(); return;
+  }
+  if(s.game==='anagram') pAnaInit();
   renderMain();
+  if(s.game==='listen') setTimeout(()=>{ if(practiceState.game==='listen' && !practiceState.done) pSpeak(practiceState.items[practiceState.idx].speak); }, 200);
 }
+// ---- kontent boshqarish ----
 function practiceManageHtml(){
-  const items = DB.practiceItems;
-  const themes = [...new Set(items.map(x=>(x.lang||'ru')+'|'+x.game+'|'+(x.theme||'Umumiy')))];
+  const items = DB.practiceItems.filter(x=> !practiceState.lang || (x.lang||'ru')===practiceState.lang);
+  const keys = [...new Set(items.map(x=>(x.lang||'ru')+'|'+pCefr(x)+'|'+x.game+'|'+(x.theme||'Umumiy')))].sort();
+  const icon = g=> (P_GAMES[g]?P_GAMES[g].ico:'•');
   return `
     <div class="card">
       <h3>⚙️ Mashq kontentini boshqarish</h3>
-      <p style="color:var(--text-dim);margin:6px 0 12px;font-size:13px;">Yangi rasm-so'z juftligi yoki predlog gapini qo'shing. O'quvchilarda darhol ko'rinadi.</p>
+      <p style="color:var(--text-dim);margin:6px 0 12px;font-size:13px;">Yangi so'z yoki gap qo'shing — o'quvchilarda darhol ko'rinadi. Yangi mavzu nomini yozsangiz, mavzu avtomatik paydo bo'ladi.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
-        <button class="btn gold sm" onclick="openPracticeAddModal('pic')">+ Rasm ↔ So'z</button>
+        <button class="btn gold sm" onclick="openPracticeAddModal('pic')">+ So'z (rasm / ma'no)</button>
         <button class="btn gold sm" onclick="openPracticeAddModal('prep')">+ Predlog gapi</button>
         <button class="btn gold sm" onclick="openPracticeAddModal('case')">+ Padej gapi</button>
+        <button class="btn gold sm" onclick="openPracticeAddModal('cloze')">+ Gapni to'ldirish</button>
+        <button class="btn gold sm" onclick="openPracticeAddModal('syn')">+ Sinonim / ma'no</button>
       </div>
-      ${themes.map(k=>{ const [l,g,th]=k.split('|'); const list=items.filter(x=>(x.lang||'ru')===l && x.game===g && (x.theme||'Umumiy')===th);
-        return `<details style="margin-bottom:8px;"><summary style="cursor:pointer;font-weight:600;">${l==='en'?'🇬🇧':'🇷🇺'} ${g==='pic'?'🖼️':g==='case'?'📐':'✍️'} ${th} (${list.length})</summary>
-          <div style="margin-top:8px;">${list.map(x=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:14px;"><span>${(x.level||'easy')==='hard'?'🔴':'🟢'} ${x.prompt} → <b>${x.answer}</b></span><button class="icon-btn rose" onclick="deletePracticeItem('${x.id}')">O'chirish</button></div>`).join('')}</div></details>`; }).join('') || '<div class="empty">Hali kontent yo\'q</div>'}
+      ${practiceState.lang ? (keys.map(k=>{ const [l,c,g,th]=k.split('|'); const list=items.filter(x=>(x.lang||'ru')===l && pCefr(x)===c && x.game===g && (x.theme||'Umumiy')===th);
+        return `<details style="margin-bottom:8px;"><summary style="cursor:pointer;font-weight:600;">${l==='en'?'🇬🇧':'🇷🇺'} ${c} · ${icon(g)} ${th} (${list.length})</summary>
+          <div style="margin-top:8px;">${list.map(x=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:14px;"><span>${x.prompt} → <b>${x.answer}</b></span><button class="icon-btn rose" onclick="deletePracticeItem('${x.id}')">O'chirish</button></div>`).join('')}</div></details>`; }).join('') || '<div class="empty">Bu tilda hali kontent yo\'q</div>') : '<div class="empty">Ro\'yxatni ko\'rish uchun avval tilni tanlang</div>'}
     </div>`;
 }
 function openPracticeAddModal(game){
   const themeOpts = [...new Set(DB.practiceItems.filter(x=>x.game===game).map(x=>x.theme||'Umumiy'))].map(x=>`<option value="${x}">`).join('');
+  const lang = practiceState.lang||'ru', lvl = (practiceState.level==='all'?'A1':practiceState.level);
+  const titles = {pic:"So'z qo'shish (rasm / ma'no)", prep:"Predlog gapi qo'shish", case:"Padej gapi qo'shish", cloze:"Gapni to'ldirish qo'shish", syn:"Sinonim / ma'no qo'shish"};
   const bg = document.createElement('div'); bg.className='modal-bg';
-  bg.innerHTML = `<div class="modal">
-    <h3>${game==='pic'?"Rasm ↔ So'z qo'shish":game==='case'?"Padej gapi qo'shish":"Predlog gapi qo'shish"}</h3>
-    <label>Til</label><select id="pr-lang"><option value="ru" ${practiceState.lang==='en'?'':'selected'}>🇷🇺 Rus tili</option><option value="en" ${practiceState.lang==='en'?'selected':''}>🇬🇧 Ingliz tili</option></select>
-    <label>Mavzu</label><input type="text" id="pr-theme" list="pr-themes" placeholder="masalan: Mebel"><datalist id="pr-themes">${themeOpts}</datalist>
-    <label>Daraja</label><select id="pr-level"><option value="easy">🟢 Sodda (boshlang'ich)</option><option value="hard">🔴 Murakkab</option></select>
-    ${game==='pic' ? `
-      <label>Rasm (emoji)</label><input type="text" id="pr-prompt" placeholder="🪑" maxlength="8">
-      <div class="hint">Emoji'ni telefon/kompyuter klaviaturasidan tanlang (Windows: Win + . )</div>
-      <label>So'z (tanlangan tilda)</label><input type="text" id="pr-answer" placeholder="стул">` : `
-      <label>Gap (bo'sh joy o'rniga ___ yozing)</label><input type="text" id="pr-prompt" placeholder="${game==='case'?'Я читаю ___ (книга).':'Книга лежит ___ столе.'}">
-      <label>${game==='case'?"To'g'ri shakl":"To'g'ri predlog"}</label><input type="text" id="pr-answer" placeholder="${game==='case'?'книгу':'на'}">
+  let body;
+  if(game==='pic'){
+    body = `<label>Rasm (emoji) yoki o'zbekcha ma'no</label><input type="text" id="pr-prompt" placeholder="🪑 yoki: ishonch">
+      <div class="hint">Emoji: Windows — Win + . ; telefon klaviaturasidan. Mavhum so'zlar uchun o'zbekcha ma'noni yozing.</div>
+      <label>So'z (o'rganiladigan tilda)</label><input type="text" id="pr-answer" placeholder="стул / chair">
+      <label>O'zbekcha izoh (ixtiyoriy)</label><input type="text" id="pr-hint" placeholder="stul">`;
+  } else if(game==='syn'){
+    body = `<label>Savol</label><input type="text" id="pr-prompt" placeholder="Sinonimini toping: большой">
+      <label>To'g'ri javob</label><input type="text" id="pr-answer" placeholder="огромный">
+      <label>Noto'g'ri variantlar (vergul bilan, ixtiyoriy — bo'sh qolsa avtomatik)</label><input type="text" id="pr-wrong" placeholder="маленький, тонкий, узкий">
+      <label>Izoh (ixtiyoriy)</label><input type="text" id="pr-hint" placeholder="">`;
+  } else {
+    body = `<label>Gap (bo'sh joy o'rniga ___ yozing)</label><input type="text" id="pr-prompt" placeholder="${game==='case'?'Я читаю ___ (книга).':'Книга лежит ___ столе.'}">
+      <label>To'g'ri javob</label><input type="text" id="pr-answer" placeholder="${game==='case'?'книгу':'на'}">
       <label>Noto'g'ri variantlar (vergul bilan, 2-3 ta)</label><input type="text" id="pr-wrong" placeholder="${game==='case'?'книга, книге, книг':'в, под, из'}">
-      <label>O'zbekcha izoh (ixtiyoriy)</label><input type="text" id="pr-hint" placeholder="Kitob stol ustida yotibdi">`}
+      <label>O'zbekcha izoh (ixtiyoriy)</label><input type="text" id="pr-hint" placeholder="Kitob stol ustida yotibdi">`;
+  }
+  bg.innerHTML = `<div class="modal"><h3>${titles[game]}</h3>
+    <label>Til</label><select id="pr-lang"><option value="ru" ${lang==='ru'?'selected':''}>🇷🇺 Rus tili</option><option value="en" ${lang==='en'?'selected':''}>🇬🇧 Ingliz tili</option></select>
+    <label>Daraja</label><select id="pr-cefr">${CEFR.map(c=>`<option value="${c}" ${c===lvl?'selected':''}>${c}</option>`).join('')}</select>
+    <label>Mavzu</label><input type="text" id="pr-theme" list="pr-themes" placeholder="masalan: Mebel"><datalist id="pr-themes">${themeOpts}</datalist>
+    ${body}
     <div class="err" id="pr-err"></div>
     <div class="modal-actions">
       <button class="btn outline" onclick="this.closest('.modal-bg').remove()">Bekor qilish</button>
@@ -5630,17 +5795,20 @@ async function savePracticeItem(game){
   const err = document.getElementById('pr-err');
   const theme = g('pr-theme')||'Umumiy', prompt = g('pr-prompt'), answer = g('pr-answer');
   if(!prompt || !answer){ err.textContent = "Barcha majburiy maydonlarni to'ldiring"; return; }
-  let options = null, hint = null;
-  if(game!=='pic'){
+  let options = null, hint = g('pr-hint') || null;
+  if(game==='prep' || game==='case' || game==='cloze'){
     if(!prompt.includes('___')){ err.textContent = "Gapda ___ (bo'sh joy) bo'lishi kerak"; return; }
     const wrong = g('pr-wrong').split(',').map(x=>x.trim()).filter(Boolean);
     if(wrong.length<1){ err.textContent = "Kamida 1 ta noto'g'ri variant yozing"; return; }
-    options = [answer, ...wrong].join('|'); hint = g('pr-hint') || null;
+    options = [answer, ...wrong].join('|');
+  } else if(game==='syn'){
+    const wrong = g('pr-wrong').split(',').map(x=>x.trim()).filter(Boolean);
+    if(wrong.length) options = [answer, ...wrong].join('|');
   }
   try{
-    const level = g('pr-level')||'easy';
-    const lang = g('pr-lang')||'ru';
-    const row = await insertRow('practice_items', {game, theme, prompt, answer, options, hint, level, lang});
+    const cefr = g('pr-cefr')||'A1', lang = g('pr-lang')||'ru';
+    const level = (cefr==='A1'||cefr==='A2') ? 'easy' : 'hard';
+    const row = await insertRow('practice_items', {game, theme, prompt, answer, options, hint, level, cefr, lang});
     DB.practiceItems.push(row);
     document.querySelector('.modal-bg').remove();
     renderMain();
@@ -5651,15 +5819,17 @@ async function deletePracticeItem(id){
   try{ await deleteRow('practice_items', id); DB.practiceItems = DB.practiceItems.filter(x=>x.id!==id); renderMain(); }
   catch(e){ console.error(e); alert("O'chirishda xatolik"); }
 }
-
+// ---- ko'rinish ----
 function renderPractice(u){
-  const s = practiceState;
-  const style = `<style>.p-card{padding:14px 10px;border:2px solid var(--border,#ddd);border-radius:12px;text-align:center;cursor:pointer;background:var(--card,#fff);font-size:18px;transition:.15s;user-select:none}.p-card:hover{border-color:var(--gold)}.p-sel{border-color:var(--gold);background:rgba(212,175,55,.15)}.p-ok{border-color:#2e9e5b;background:rgba(46,158,91,.18);cursor:default;opacity:.7}.p-wrong{border-color:#d33;background:rgba(211,51,51,.18);animation:pshake .3s}@keyframes pshake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}.p-emoji{font-size:44px;line-height:1.1}.p-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}</style>`;
+  const s = practiceState; s.uid = u.id;
+  const style = `<style>.p-card{padding:14px 10px;border:2px solid var(--border,#ddd);border-radius:12px;text-align:center;cursor:pointer;background:var(--card,#fff);font-size:18px;transition:.15s;user-select:none}.p-card:hover{border-color:var(--gold)}.p-sel{border-color:var(--gold);background:rgba(212,175,55,.15)}.p-ok{border-color:#2e9e5b;background:rgba(46,158,91,.18);cursor:default;opacity:.7}.p-wrong{border-color:#d33;background:rgba(211,51,51,.18);animation:pshake .3s}@keyframes pshake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}.p-emoji{font-size:44px;line-height:1.1}.p-txt{font-size:19px;line-height:1.25}.p-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.p-mem{min-height:84px;display:flex;align-items:center;justify-content:center;font-size:30px}.p-slot{display:inline-flex;align-items:center;justify-content:center;width:28px;height:42px;border-bottom:3px solid var(--gold);font-size:24px;font-weight:700;margin:0 2px}.p-chip{display:inline-flex;align-items:center;justify-content:center;min-width:46px;height:50px;padding:0 6px;margin:4px;border:2px solid var(--border,#ddd);border-radius:10px;font-size:24px;font-weight:700;cursor:pointer;background:var(--card,#fff)}.p-chip.used{opacity:.25;cursor:default}.p-in{width:100%;padding:12px;font-size:20px;border:2px solid var(--border,#ddd);border-radius:10px;text-align:center;background:var(--card,#fff);color:inherit}</style>`;
+  const head = (title, sub, back)=>`<div class="topbar"><div><h1>${title}</h1><p>${sub||''}</p></div>${back||''}</div>`;
+  const backBtn = `<button class="btn outline sm" onclick="practiceReset();renderMain();">← Orqaga</button>`;
   if(!s.game){
-    const head = (sub)=>`<div class="topbar"><div><h1>🧩 Mashq o'yinlari</h1><p>${sub}</p></div></div>`;
+    const streak = pStreakInfo(u.id); const fire = (streak.last===pToday()||streak.last===pToday(new Date(Date.now()-864e5))) && streak.n>0 ? `<span style="margin-left:8px;">🔥 ${streak.n} kun</span>` : '';
     const cnt = (l)=>DB.practiceItems.filter(x=>(x.lang||'ru')===l).length;
     if(!s.lang){
-      return `${style}${head('Avval tilni tanlang')}
+      return `${style}${head("🧩 Mashq o'yinlari", 'Avval tilni tanlang'+fire)}
         <div class="p-grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">
           <div class="p-card" onclick="practiceState.lang='ru';renderMain();"><div class="p-emoji">🇷🇺</div><div style="font-weight:700;margin-top:6px;">Rus tili</div><div style="font-size:13px;color:var(--muted);">${cnt('ru')} ta mashq</div></div>
           <div class="p-card" onclick="practiceState.lang='en';renderMain();"><div class="p-emoji">🇬🇧</div><div style="font-weight:700;margin-top:6px;">Ingliz tili</div><div style="font-size:13px;color:var(--muted);">${cnt('en')} ta mashq</div></div>
@@ -5667,69 +5837,98 @@ function renderPractice(u){
         ${u.role!=='student' ? practiceManageHtml() : ''}`;
     }
     const langName = s.lang==='en' ? '🇬🇧 Ingliz tili' : '🇷🇺 Rus tili';
-    const gInfo = {pic:["🖼️","Rasm ↔ So'z","Rasmni mos so'z bilan juftlang."], prep:["✍️","Predlogni tanlang","Gapdagi bo'sh joyga to'g'ri predlogni qo'ying."], case:["📐","Padejlar","Qavs ichidagi so'zni to'g'ri kelishikda tanlang."]};
-    const lvls = [['easy',"🟢 Sodda"],['hard',"🔴 Murakkab"],['all',"Hammasi"]];
-    const lvlBar = `<div class="card"><label>Daraja</label><div style="display:flex;gap:8px;flex-wrap:wrap;">${lvls.map(([k,l])=>`<button class="btn sm ${s.level===k?'gold':'outline'}" onclick="practiceState.level='${k}';renderMain();">${l}</button>`).join('')}</div></div>`;
+    const inLang = DB.practiceItems.filter(x=>practiceLangOk(x));
+    const lvlBar = `<div class="card"><label>Daraja (CEFR)</label><div style="display:flex;gap:8px;flex-wrap:wrap;">${[...CEFR,'all'].map(k=>{ const n = k==='all'?inLang.length:inLang.filter(x=>pCefr(x)===k).length; return `<button class="btn sm ${s.level===k?'gold':'outline'}" onclick="practiceState.level='${k}';practiceState.themePick=null;renderMain();">${k==='all'?'Hammasi':k} <span style="opacity:.6;font-size:12px;">${n}</span></button>`; }).join('')}</div></div>`;
     if(!s.themePick){
-      const pool = DB.practiceItems.filter(x=>practiceLangOk(x) && practiceLevelOk(x));
+      const pool = inLang.filter(x=>practiceLevelOk(x));
       const names = [...new Set(pool.map(x=>x.theme||'Umumiy'))];
-      const cards = names.map(th=>{ const l=pool.filter(x=>(x.theme||'Umumiy')===th); const games=[...new Set(l.map(x=>x.game))];
-        return `<div class="p-card" data-th="${encodeURIComponent(th)}" onclick="practiceState.themePick=decodeURIComponent(this.dataset.th);renderMain();"><div style="font-size:30px;">${games.map(g=>gInfo[g]?gInfo[g][0]:'').join(' ')}</div><div style="font-weight:700;margin-top:6px;">${th}</div><div style="font-size:13px;color:var(--muted);">${l.length} ta</div></div>`; }).join('');
-      return `${style}${head(langName+' — mavzuni tanlang')}
+      const cards = names.map(th=>{ const l=pool.filter(x=>(x.theme||'Umumiy')===th); const ts=practiceThemeStars(th);
+        const hasPic = l.some(x=>x.game==='pic'); const ico = hasPic ? (l.find(x=>x.game==='pic' && pEmoji(x.prompt))||{prompt:'📚'}).prompt : (l[0].game==='syn'?'🔗':l[0].game==='case'?'📐':l[0].game==='cloze'?'🧩':'✍️');
+        return `<div class="p-card" data-th="${encodeURIComponent(th)}" onclick="practiceState.themePick=decodeURIComponent(this.dataset.th);renderMain();"><div style="font-size:32px;">${ico}</div><div style="font-weight:700;margin-top:6px;">${th}</div><div style="font-size:13px;color:var(--muted);">${l.length} ta · ⭐ ${ts.got}/${ts.max}</div></div>`; }).join('');
+      return `${style}${head("🧩 Mashq o'yinlari", langName+' — mavzuni tanlang'+fire)}
         <div style="margin-bottom:12px;"><button class="btn outline sm" onclick="practiceHome()">← Tillar</button></div>
         ${lvlBar}
-        <div class="p-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));">${cards || '<div class="empty">Bu tilda hozircha mashq yo\'q'+(u.role!=='student'?' — pastdan qo\'shing':'')+'</div>'}</div>
+        <div class="p-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));">${cards || '<div class="empty">Bu daraja va tilda hozircha mashq yo\'q'+(u.role!=='student'?' — pastdan qo\'shing':'')+'</div>'}</div>
         ${u.role!=='student' ? practiceManageHtml() : ''}`;
     }
-    const th = s.themePick;
-    const pool = DB.practiceItems.filter(x=>practiceLangOk(x) && practiceLevelOk(x) && (x.theme||'Umumiy')===th);
-    const games = ['pic','prep','case'].filter(g=>pool.some(x=>x.game===g));
-    const gcards = games.map(g=>`<div class="p-card" onclick="practiceStart('${g}',practiceState.themePick)"><div class="p-emoji">${gInfo[g][0]}</div><div style="font-weight:700;margin-top:6px;">${gInfo[g][1]}</div><div style="font-size:13px;color:var(--muted);margin-top:4px;">${gInfo[g][2]}</div><div style="font-size:13px;margin-top:6px;">${pool.filter(x=>x.game===g).length} ta</div></div>`).join('');
-    return `${style}${head(langName+' — '+th)}
+    const th = s.themePick; const m = pStars(u.id);
+    const gcards = Object.keys(P_GAMES).filter(g=>pPool(P_GAMES[g].src, th).length>=P_GAMES[g].min).map(g=>{ const d=P_GAMES[g]; const st=m[s.lang+'|'+th+'|'+g]||0;
+      return `<div class="p-card" onclick="practiceStart('${g}',practiceState.themePick)"><div class="p-emoji">${d.ico}</div><div style="font-weight:700;margin-top:6px;">${d.name}</div><div style="font-size:13px;color:var(--muted);margin-top:4px;">${d.desc}</div><div style="margin-top:8px;font-size:18px;">${'⭐'.repeat(st)}${'☆'.repeat(3-st)}</div></div>`; }).join('');
+    return `${style}${head("🧩 Mashq o'yinlari", langName+' — '+th+fire)}
       <div style="margin-bottom:12px;"><button class="btn outline sm" onclick="practiceState.themePick=null;renderMain();">← Mavzular</button></div>
-      ${lvlBar}
-      <div class="p-grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">${gcards || '<div class="empty">Bu darajada o\'yin yo\'q — darajani o\'zgartiring</div>'}</div>`;
+      <div class="p-grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">${gcards || '<div class="empty">Bu mavzuda o\'yin yo\'q</div>'}</div>`;
   }
-  const back = `<button class="btn outline sm" onclick="practiceReset();renderMain();">← Orqaga</button>`;
-  if(s.game==='pic'){
+  const def = P_GAMES[s.game];
+  if(s.done){
+    const r = s.result || {stars:0,correct:0,total:0,streak:1,coinMsg:'',line:''};
+    return `${style}${head(def.ico+' '+def.name,'Natija')}
+      <div class="card" style="text-align:center;">
+        <div style="font-size:48px;">${r.stars>=3?'🏆':r.stars>=2?'👍':'📚'}</div>
+        <div style="font-size:34px;margin:6px 0;">${'⭐'.repeat(r.stars)}${'☆'.repeat(3-r.stars)}</div>
+        <div style="font-size:20px;margin:8px 0;">${r.line || (r.correct+' / '+r.total)}</div>
+        <div style="color:var(--muted);margin-bottom:12px;">🔥 ${r.streak} kunlik seriya ${r.coinMsg?' · '+r.coinMsg+' (3 yulduz uchun!)':''}</div>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+          <button class="btn gold" onclick="practiceStart('${s.game}',practiceState.theme)">Qayta urinish</button>
+          <button class="btn outline" onclick="practiceReset();renderMain();">Boshqa o'yin</button>
+        </div>
+      </div>`;
+  }
+  if(s.game==='match'){
     const all = s.matched.length===s.items.length;
-    return `${style}
-      <div class="topbar"><div><h1>🖼️ Rasm ↔ So'z</h1><p>To'g'ri: ${s.score} · Xato: ${s.mistakes}</p></div>${back}</div>
+    return `${style}${head(def.ico+' '+def.name, "To'g'ri: "+s.score+' · Xato: '+s.mistakes, backBtn)}
       <div class="card">
         <div class="p-grid">
-          <div style="display:flex;flex-direction:column;gap:10px;">${s.left.map(i=>`<div id="pl-${i}" class="p-card p-emoji ${s.matched.includes(i)?'p-ok':''} ${s.selL===i?'p-sel':''}" onclick="practicePickL(${i})">${s.items[i].prompt}</div>`).join('')}</div>
+          <div style="display:flex;flex-direction:column;gap:10px;">${s.left.map(i=>`<div id="pl-${i}" class="p-card ${s.matched.includes(i)?'p-ok':''} ${s.selL===i?'p-sel':''}" style="display:flex;align-items:center;justify-content:center;min-height:68px;" onclick="practicePickL(${i})">${pShow(s.items[i].prompt)}</div>`).join('')}</div>
           <div style="display:flex;flex-direction:column;gap:10px;">${s.right.map(i=>`<div id="pr-${i}" class="p-card ${s.matched.includes(i)?'p-ok':''} ${s.selR===i?'p-sel':''}" style="display:flex;align-items:center;justify-content:center;min-height:68px;" onclick="practicePickR(${i})">${s.items[i].answer}</div>`).join('')}</div>
         </div>
-        ${all?`<div style="text-align:center;margin-top:16px;"><div style="font-size:20px;margin-bottom:10px;">🎉 Barakalla!</div><button class="btn gold" onclick="practiceNextRound();renderMain();">Keyingi 6 ta →</button></div>`:''}
+        ${all?`<div style="text-align:center;margin-top:16px;"><div style="font-size:20px;margin-bottom:10px;">🎉 Barakalla!</div><button class="btn gold" onclick="practiceNextRound();renderMain();">${s.queue.length>=2?'Keyingi →':'Natijani ko\'rish'}</button></div>`:''}
       </div>`;
   }
-  // prep
-  if(s.done){
-    const total = s.items.length;
-    return `${style}
-      <div class="topbar"><div><h1>✍️ Natija</h1></div></div>
+  if(s.game==='memory'){
+    return `${style}${head(def.ico+' '+def.name, 'Yurishlar: '+s.moves+' · Topildi: '+s.score+'/'+s.items.length, backBtn)}
+      <div class="card"><div class="p-grid" style="grid-template-columns:repeat(4,1fr);">${s.cards.map((c,i)=>{ const open = s.flipped.includes(i)||s.matched.includes(i); return `<div class="p-card p-mem ${s.matched.includes(i)?'p-ok':''} ${open&&!s.matched.includes(i)?'p-sel':''}" onclick="practiceFlip(${i})">${open?pShow(c.c):'❓'}</div>`; }).join('')}</div></div>`;
+  }
+  if(s.game==='write'){
+    const it = s.items[s.idx];
+    return `${style}${head(def.ico+' '+def.name, (s.idx+1)+' / '+s.items.length+" · To'g'ri: "+s.score, backBtn)}
       <div class="card" style="text-align:center;">
-        <div style="font-size:48px;">${s.score>=total*0.8?'🏆':s.score>=total*0.5?'👍':'📚'}</div>
-        <div style="font-size:22px;margin:10px 0;">${s.score} / ${total}</div>
-        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-          <button class="btn gold" onclick="practiceStart(practiceState.game,practiceState.theme)">Qayta urinish</button>
-          <button class="btn outline" onclick="practiceReset();renderMain();">Mavzularga qaytish</button>
-        </div>
+        <div style="margin:10px 0;">${pShow(it.prompt)}</div>
+        ${it.hint && s.answered?`<div style="color:var(--muted);margin-bottom:8px;">${it.hint}</div>`:''}
+        ${s.hintUsed?`<div style="color:var(--gold);margin-bottom:8px;">💡 ${it.answer.length} ta harf · boshlanishi: <b>${it.answer[0]}</b></div>`:`<div style="color:var(--muted);margin-bottom:8px;">${it.answer.length} ta harf</div>`}
+        <input id="p-in" class="p-in" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" value="${s.typed.replace(/"/g,'&quot;')}" ${s.answered?'disabled':''} onkeydown="if(event.key==='Enter'){practiceCheckWrite();}">
+        ${s.answered?`<div style="margin:14px 0;">${s.picked?'✅ To\'g\'ri!':'❌ To\'g\'ri javob: <b>'+it.answer+'</b>'}</div><button class="btn gold" onclick="practiceNext()">${s.idx+1>=s.items.length?'Natijani ko\'rish':'Keyingi →'}</button>`
+          :`<div style="display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap;"><button class="btn outline" onclick="practiceHint()">💡 Yordam</button><button class="btn gold" onclick="practiceCheckWrite()">Tekshirish</button></div>`}
       </div>`;
   }
+  if(s.game==='anagram'){
+    const it = s.items[s.idx];
+    const slots = [...it.answer].map((c,k)=>`<span class="p-slot">${s.built[k]!==undefined ? s.letters[s.built[k]].c : ''}</span>`).join('');
+    return `${style}${head(def.ico+' '+def.name, (s.idx+1)+' / '+s.items.length+" · To'g'ri: "+s.score, backBtn)}
+      <div class="card" style="text-align:center;">
+        <div style="margin:10px 0;">${pShow(it.prompt)}</div>
+        ${it.hint?`<div style="color:var(--muted);margin-bottom:8px;">${it.hint}</div>`:''}
+        <div style="margin:14px 0;">${slots}</div>
+        <div>${s.letters.map((l,j)=>`<span class="p-chip ${s.built.includes(j)?'used':''}" onclick="practiceAnaPick(${j})">${l.c}</span>`).join('')}</div>
+        ${s.answered?`<div style="margin:14px 0;">${s.picked?'✅ To\'g\'ri!':'❌ To\'g\'ri javob: <b>'+it.answer+'</b>'}</div><button class="btn gold" onclick="practiceNext()">${s.idx+1>=s.items.length?'Natijani ko\'rish':'Keyingi →'}</button>`
+          :`<div style="margin-top:12px;"><button class="btn outline sm" onclick="practiceAnaUndo()">⌫ Orqaga</button></div>`}
+      </div>`;
+  }
+  // tanlash o'yinlari: prep, case, cloze, syn, quiz, listen, odd
   const it = s.items[s.idx];
-  const opts = practiceShuffle((it.options||'').split('|').map(x=>x.trim()).filter(Boolean));
-  if(!opts.includes(it.answer)) opts.push(it.answer);
-  if(!s._optCache || s._optCache.idx!==s.idx || s._optCache.game!==s.game){ s._optCache = {idx:s.idx, game:s.game, list:opts}; }
-  const list = s._optCache.list;
-  const sentence = (it.prompt||'').replace('___', `<b style="color:var(--gold);border-bottom:2px solid var(--gold);padding:0 8px;">${s.answered?it.answer:'____'}</b>`);
-  return `${style}
-    <div class="topbar"><div><h1>${s.game==='case'?'📐 Padejni tanlang':'✍️ Predlogni tanlang'}</h1><p>${s.idx+1} / ${s.items.length} · To'g'ri: ${s.score}</p></div>${back}</div>
+  const timed = s.game==='quiz';
+  const sentence = (it.prompt||'').includes('___') ? it.prompt.replace('___', `<b style="color:var(--gold);border-bottom:2px solid var(--gold);padding:0 8px;">${s.answered?it.answer:'____'}</b>`) : null;
+  let top;
+  if(s.game==='listen') top = `<div style="margin:6px 0 12px;"><button class="btn gold" data-w="${encodeURIComponent(it.speak)}" onclick="pSpeak(decodeURIComponent(this.dataset.w))" style="font-size:28px;padding:14px 28px;">🔊</button><div style="font-size:13px;color:var(--muted);margin-top:6px;">Tinglang va to'g'ri javobni tanlang${s.answered?' — <b>'+it.speak+'</b>':''}</div></div>`;
+  else if(sentence) top = `<div style="font-size:22px;text-align:center;margin:10px 0 6px;">${sentence}</div>`;
+  else if(s.game==='quiz' || s.game==='odd' || s.game==='syn') top = `<div style="text-align:center;margin:10px 0 12px;">${s.game==='quiz'?pShow(it.prompt):`<span style="font-size:21px;">${it.prompt}</span>`}</div>`;
+  else top = `<div style="font-size:22px;text-align:center;margin:10px 0 6px;">${it.prompt}</div>`;
+  const sub = timed ? `⏱️ <b id="p-timer">${s.timeLeft}</b> s · To'g'ri: ${s.score}` : (s.idx+1)+' / '+s.items.length+" · To'g'ri: "+s.score;
+  return `${style}${head(def.ico+' '+def.name, sub, backBtn)}
     <div class="card">
-      <div style="font-size:22px;text-align:center;margin:10px 0 6px;">${sentence}</div>
-      ${it.hint?`<div style="text-align:center;color:var(--muted);margin-bottom:14px;">${it.hint}</div>`:'<div style="margin-bottom:14px;"></div>'}
-      <div class="p-grid">${list.map(o=>{ let cls=''; if(s.answered){ if(o===it.answer) cls='p-ok'; else if(o===s.picked) cls='p-wrong'; } return `<div class="p-card ${cls}" data-o="${encodeURIComponent(o)}" onclick="practiceAnswer(decodeURIComponent(this.dataset.o))">${o}</div>`; }).join('')}</div>
-      ${s.answered?`<div style="text-align:center;margin-top:16px;"><div style="margin-bottom:10px;">${s.picked===it.answer?'✅ To\'g\'ri!':'❌ To\'g\'ri javob: <b>'+it.answer+'</b>'}</div><button class="btn gold" onclick="practiceNext()">${s.idx+1>=s.items.length?'Natijani ko\'rish':'Keyingi →'}</button></div>`:''}
+      ${top}
+      ${it.hint && !timed && s.game!=='odd'?`<div style="text-align:center;color:var(--muted);margin-bottom:14px;">${it.hint}</div>`:'<div style="margin-bottom:14px;"></div>'}
+      <div class="p-grid">${it.opts.map(o=>{ let cls=''; if(s.answered){ if(o===it.answer) cls='p-ok'; else if(o===s.picked) cls='p-wrong'; } return `<div class="p-card ${cls}" style="display:flex;align-items:center;justify-content:center;min-height:64px;" data-o="${encodeURIComponent(o)}" onclick="practiceAnswer(decodeURIComponent(this.dataset.o))">${pShow(o)}</div>`; }).join('')}</div>
+      ${s.answered && !timed?`<div style="text-align:center;margin-top:16px;"><div style="margin-bottom:10px;">${s.picked===it.answer?'✅ To\'g\'ri!':'❌ To\'g\'ri javob: <b>'+it.answer+'</b>'}</div><button class="btn gold" onclick="practiceNext()">${s.idx+1>=s.items.length?'Natijani ko\'rish':'Keyingi →'}</button></div>`:''}
     </div>`;
 }
 
