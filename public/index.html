@@ -916,7 +916,7 @@ setInterval(checkForUpdate, 45000);
 
 /* ============ SELF-REGISTRATION (student requests) ============ */
 function openRegisterModal(){
-  const teacherOpts = DB.teachers.map(t=>`<option value="${t.id}">${teacherName(t.id)}${t.subject?' — '+fl(t.subject):''}</option>`).join('');
+  const teacherOpts = DB.teachers.map(t=>`<option value="${t.id}">${teacherName(t.id)}${t.subject?' — '+flt(t.subject):''}</option>`).join('');
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.innerHTML = `
@@ -2203,7 +2203,7 @@ function renderStudents(){
   }).join('');
   const teacherOpts = DB.teachers.map(t=>{
     const u = DB.users.find(x=>x.id===t.userId);
-    return `<option value="${t.id}">${u?u.name:'—'} (${fl(t.subject)})</option>`;
+    return `<option value="${t.id}">${u?u.name:'—'} (${flt(t.subject)})</option>`;
   }).join('');
   const statusFilters = [
     ['all','Barchasi'],['paid',"To'lagan"],['unpaid',"To'lamagan"],['frozen','❄️ Muzlatilgan'],
@@ -2230,7 +2230,7 @@ function renderStudents(){
 function openStudentModal(){
   const teacherOptsHtml = DB.teachers.map(t=>{
     const u = DB.users.find(x=>x.id===t.userId);
-    return `<option value="${t.id}">${u?u.name:'—'} (${fl(t.subject)})</option>`;
+    return `<option value="${t.id}">${u?u.name:'—'} (${flt(t.subject)})</option>`;
   }).join('');
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
@@ -2304,7 +2304,7 @@ function openStudentEditModal(studentId){
   const u = DB.users.find(x=>x.id===s.userId);
   const teacherOpts = DB.teachers.map(t=>{
     const tu = DB.users.find(x=>x.id===t.userId);
-    return `<option value="${t.id}" ${t.id===s.teacherId?'selected':''}>${tu?tu.name:'—'} (${fl(t.subject)})</option>`;
+    return `<option value="${t.id}" ${t.id===s.teacherId?'selected':''}>${tu?tu.name:'—'} (${flt(t.subject)})</option>`;
   }).join('');
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
@@ -2340,7 +2340,7 @@ function openChangeGroupModal(studentId){
   const u = DB.users.find(x=>x.id===s.userId);
   const teacherOpts = DB.teachers.map(tc=>{
     const tu = DB.users.find(x=>x.id===tc.userId);
-    return `<option value="${tc.id}" ${tc.id===s.teacherId?'selected':''}>${tu?tu.name:'—'} (${fl(tc.subject)})</option>`;
+    return `<option value="${tc.id}" ${tc.id===s.teacherId?'selected':''}>${tu?tu.name:'—'} (${flt(tc.subject)})</option>`;
   }).join('');
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
@@ -2446,7 +2446,13 @@ async function deleteStudent(id){
 }
 
 /* ============ SCHEDULE ============ */
-function fl(s){ s = s==null ? '' : String(s); if(/^\s*(🇷🇺|🇬🇧)/.test(s)) return s; if(/\brus\b|русск/i.test(s)) return '🇷🇺 '+s; if(/ingliz|english|англий/i.test(s)) return '🇬🇧 '+s; return s; }
+const _FLAG_SVG = {
+  ru: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 3 2'><rect width='3' height='2' fill='#fff'/><rect y='.667' width='3' height='.667' fill='#0039a6'/><rect y='1.333' width='3' height='.667' fill='#d52b1e'/></svg>",
+  en: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 30'><clipPath id='s'><path d='M0,0 v30 h60 v-30 z'/></clipPath><clipPath id='t'><path d='M30,15 h30 v15 z v15 h-30 z h-30 v-15 z v-15 h30 z'/></clipPath><g clip-path='url(#s)'><path d='M0,0 v30 h60 v-30 z' fill='#012169'/><path d='M0,0 L60,30 M60,0 L0,30' stroke='#fff' stroke-width='6'/><path d='M0,0 L60,30 M60,0 L0,30' clip-path='url(#t)' stroke='#C8102E' stroke-width='4'/><path d='M30,0 v30 M0,15 h60' stroke='#fff' stroke-width='10'/><path d='M30,0 v30 M0,15 h60' stroke='#C8102E' stroke-width='6'/></g></svg>"
+};
+function flagImg(code, h){ h = h || '1em'; const svg = _FLAG_SVG[code]; if(!svg) return ''; return `<img class="flag" alt="${code}" src="data:image/svg+xml;utf8,${encodeURIComponent(svg)}" style="height:${h};width:calc(${h} * 1.5);vertical-align:-0.15em;border-radius:3px;box-shadow:0 0 0 1px rgba(0,0,0,.18);object-fit:cover;">`; }
+function flt(s){ return s==null ? '' : String(s); }
+function fl(s){ s = s==null ? '' : String(s); if(/\brus\b|русск/i.test(s)) return flagImg('ru')+' '+s; if(/ingliz|english|англий/i.test(s)) return flagImg('en')+' '+s; return s; }
 function teacherName(teacherId){
   const t = DB.teachers.find(x=>x.id===teacherId);
   if(!t) return '—';
@@ -2509,7 +2515,7 @@ function scheduleOptionsForTeacher(teacherId, selectedId){
     .sort((a,b)=> DAYS.indexOf(a.day)-DAYS.indexOf(b.day) || a.time.localeCompare(b.time));
   if(!slots.length) return '<option value="">— bu o\'qituvchida dars vaqti kiritilmagan —</option>';
   return '<option value="">— tanlang —</option>' + slots.map(sl=>
-    `<option value="${sl.id}" ${sl.id===selectedId?'selected':''}>${dayLabel(sl.day)} — ${sl.time} — ${fl(sl.subject)}</option>`
+    `<option value="${sl.id}" ${sl.id===selectedId?'selected':''}>${dayLabel(sl.day)} — ${sl.time} — ${flt(sl.subject)}</option>`
   ).join('');
 }
 function onTeacherSelectChange(teacherSelectId, scheduleSelectId){
@@ -4366,8 +4372,8 @@ function renderTranslator(){
           <label>Qaysi tilga</label>
           <select id="tr-target">
             <option value="uz">O'zbek tiliga</option>
-            <option value="ru">🇷🇺 Rus tiliga</option>
-            <option value="en">🇬🇧 Ingliz tiliga</option>
+            <option value="ru">Rus tiliga</option>
+            <option value="en">Ingliz tiliga</option>
             <option value="ko">Koreys tiliga</option>
             <option value="tr">Turk tiliga</option>
           </select>
@@ -5753,7 +5759,7 @@ function practiceManageHtml(){
         <button class="btn gold sm" onclick="openPracticeAddModal('syn')">+ Sinonim / ma'no</button>
       </div>
       ${practiceState.lang ? (keys.map(k=>{ const [l,c,g,th]=k.split('|'); const list=items.filter(x=>(x.lang||'ru')===l && pCefr(x)===c && x.game===g && (x.theme||'Umumiy')===th);
-        return `<details style="margin-bottom:8px;"><summary style="cursor:pointer;font-weight:600;">${l==='en'?'🇬🇧':'🇷🇺'} ${c} · ${icon(g)} ${th} (${list.length})</summary>
+        return `<details style="margin-bottom:8px;"><summary style="cursor:pointer;font-weight:600;">${flagImg(l==='en'?'en':'ru')} ${c} · ${icon(g)} ${th} (${list.length})</summary>
           <div style="margin-top:8px;">${list.map(x=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:14px;"><span>${x.prompt} → <b>${x.answer}</b></span><button class="icon-btn rose" onclick="deletePracticeItem('${x.id}')">O'chirish</button></div>`).join('')}</div></details>`; }).join('') || '<div class="empty">Bu tilda hali kontent yo\'q</div>') : '<div class="empty">Ro\'yxatni ko\'rish uchun avval tilni tanlang</div>'}
     </div>`;
 }
@@ -5780,7 +5786,7 @@ function openPracticeAddModal(game){
       <label>O'zbekcha izoh (ixtiyoriy)</label><input type="text" id="pr-hint" placeholder="Kitob stol ustida yotibdi">`;
   }
   bg.innerHTML = `<div class="modal"><h3>${titles[game]}</h3>
-    <label>Til</label><select id="pr-lang"><option value="ru" ${lang==='ru'?'selected':''}>🇷🇺 Rus tili</option><option value="en" ${lang==='en'?'selected':''}>🇬🇧 Ingliz tili</option></select>
+    <label>Til</label><select id="pr-lang"><option value="ru" ${lang==='ru'?'selected':''}>Rus tili</option><option value="en" ${lang==='en'?'selected':''}>Ingliz tili</option></select>
     <label>Daraja</label><select id="pr-cefr">${CEFR.map(c=>`<option value="${c}" ${c===lvl?'selected':''}>${c}</option>`).join('')}</select>
     <label>Mavzu</label><input type="text" id="pr-theme" list="pr-themes" placeholder="masalan: Mebel"><datalist id="pr-themes">${themeOpts}</datalist>
     ${body}
@@ -5832,12 +5838,12 @@ function renderPractice(u){
     if(!s.lang){
       return `${style}${head("🧩 Mashq o'yinlari", 'Avval tilni tanlang'+fire)}
         <div class="p-grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">
-          <div class="p-card" onclick="practiceState.lang='ru';renderMain();"><div class="p-emoji">🇷🇺</div><div style="font-weight:700;margin-top:6px;">Rus tili</div><div style="font-size:13px;color:var(--muted);">${cnt('ru')} ta mashq</div></div>
-          <div class="p-card" onclick="practiceState.lang='en';renderMain();"><div class="p-emoji">🇬🇧</div><div style="font-weight:700;margin-top:6px;">Ingliz tili</div><div style="font-size:13px;color:var(--muted);">${cnt('en')} ta mashq</div></div>
+          <div class="p-card" onclick="practiceState.lang='ru';renderMain();"><div style="line-height:1;">${flagImg('ru','44px')}</div><div style="font-weight:700;margin-top:6px;">Rus tili</div><div style="font-size:13px;color:var(--muted);">${cnt('ru')} ta mashq</div></div>
+          <div class="p-card" onclick="practiceState.lang='en';renderMain();"><div style="line-height:1;">${flagImg('en','44px')}</div><div style="font-weight:700;margin-top:6px;">Ingliz tili</div><div style="font-size:13px;color:var(--muted);">${cnt('en')} ta mashq</div></div>
         </div>
         ${u.role!=='student' ? practiceManageHtml() : ''}`;
     }
-    const langName = s.lang==='en' ? '🇬🇧 Ingliz tili' : '🇷🇺 Rus tili';
+    const langName = s.lang==='en' ? flagImg('en')+' Ingliz tili' : flagImg('ru')+' Rus tili';
     const inLang = DB.practiceItems.filter(x=>practiceLangOk(x));
     const lvlBar = `<div class="card"><label>Daraja (CEFR)</label><div style="display:flex;gap:8px;flex-wrap:wrap;">${[...CEFR,'all'].map(k=>{ const n = k==='all'?inLang.length:inLang.filter(x=>pCefr(x)===k).length; return `<button class="btn sm ${s.level===k?'gold':'outline'}" onclick="practiceState.level='${k}';practiceState.themePick=null;renderMain();">${k==='all'?'Hammasi':k} <span style="opacity:.6;font-size:12px;">${n}</span></button>`; }).join('')}</div></div>`;
     if(!s.themePick){
@@ -5937,7 +5943,7 @@ function renderDuel(u){
   setupDuelPresenceAndInvites();
   const inviteBanner = duelState.incomingInvite ? `
     <div class="card" style="border:2px solid var(--gold);">
-      <b>⚔️ ${duelState.incomingInvite.fromName}</b> sizni bellashuvga chaqirmoqda! (${duelState.incomingInvite.language==='en'?'🇬🇧 Ingliz tili':'🇷🇺 Rus tili'})
+      <b>⚔️ ${duelState.incomingInvite.fromName}</b> sizni bellashuvga chaqirmoqda! (${duelState.incomingInvite.language==='en'?flagImg('en')+' Ingliz tili':flagImg('ru')+' Rus tili'})
       <div style="margin-top:10px;display:flex;gap:8px;">
         <button class="btn sm gold" onclick="respondDuelInvite(true)">Qabul qilish</button>
         <button class="btn sm outline" onclick="respondDuelInvite(false)">Rad etish</button>
@@ -5955,7 +5961,7 @@ function renderDuel(u){
       </div>`;
   }
   const modes = [['word',"📖 So'z bilan"],['sentence',"✍️ Gap bilan"],['mixed',"🔀 Aralash"]];
-  const langs = [['ru',"🇷🇺 Rus tili"],['en',"🇬🇧 Ingliz tili"]];
+  const langs = [['ru',flagImg('ru')+" Rus tili"],['en',flagImg('en')+" Ingliz tili"]];
   return `
     <div class="topbar"><div><h1>⚔️ Bellashuv</h1><p>So'z/gap bilimingizni boshqa o'quvchi bilan sinang</p></div></div>
     ${inviteBanner}
@@ -6280,7 +6286,7 @@ async function submitMyReview(userId){
 /* ============ AI CHAT (til amaliyoti, ovozli) ============ */
 let aiChatState = { language:null, level:null, history:[], loading:false, voiceOn:true, listening:false };
 const AI_CHAT_LEVELS = ['A1','A2','B1','B2','C1','C2'];
-const AI_CHAT_LANGS = [['ru',"🇷🇺 Rus tili"],['en',"🇬🇧 Ingliz tili"]];
+const AI_CHAT_LANGS = [['ru',flagImg('ru')+" Rus tili"],['en',flagImg('en')+" Ingliz tili"]];
 const SPEECH_LOCALE = { ru:'ru-RU', en:'en-US' };
 let aiChatRecognition = null;
 function speakText(text, lang){
