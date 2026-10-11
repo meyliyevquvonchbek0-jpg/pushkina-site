@@ -5542,13 +5542,15 @@ function leaveDuel(){
   renderMain();
 }
 // ============ MASHQ O'YINLARI (Wordwall uslubi) ============
-const practiceState = { level:'easy', game:null, theme:null, items:[], idx:0, score:0, mistakes:0, answered:false, picked:null, left:[], right:[], selL:null, selR:null, matched:[], done:false };
+const practiceState = { lang:null, themePick:null, level:'easy', game:null, theme:null, items:[], idx:0, score:0, mistakes:0, answered:false, picked:null, left:[], right:[], selL:null, selR:null, matched:[], done:false };
 function practiceShuffle(a){ const r=a.slice(); for(let i=r.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [r[i],r[j]]=[r[j],r[i]]; } return r; }
+function practiceLangOk(x){ return (x.lang||'ru')===practiceState.lang; }
+function practiceHome(){ practiceReset(); practiceState.lang=null; practiceState.themePick=null; renderMain(); }
 function practiceLevelOk(x){ return practiceState.level==='all' || (x.level||'easy')===practiceState.level; }
-function practiceThemes(game){ return [...new Set(DB.practiceItems.filter(x=>x.game===game && practiceLevelOk(x)).map(x=>x.theme||'Umumiy'))]; }
+function practiceThemes(game){ return [...new Set(DB.practiceItems.filter(x=>x.game===game && practiceLangOk(x) && practiceLevelOk(x)).map(x=>x.theme||'Umumiy'))]; }
 function practiceReset(){ practiceState._optCache=null; Object.assign(practiceState,{game:null,theme:null,items:[],idx:0,score:0,mistakes:0,answered:false,picked:null,left:[],right:[],selL:null,selR:null,matched:[],done:false}); }
 function practiceStart(game, theme){
-  const pool = DB.practiceItems.filter(x=>x.game===game && practiceLevelOk(x) && (theme==='__all__' || (x.theme||'Umumiy')===theme));
+  const pool = DB.practiceItems.filter(x=>x.game===game && practiceLangOk(x) && practiceLevelOk(x) && (theme==='__all__' || (x.theme||'Umumiy')===theme));
   if(pool.length < 2){ alert('Bu mavzuda mashq yetarli emas'); return; }
   practiceReset();
   practiceState.game = game; practiceState.theme = theme;
@@ -5557,7 +5559,7 @@ function practiceStart(game, theme){
   renderMain();
 }
 function practiceNextRound(pool){
-  pool = pool || DB.practiceItems.filter(x=>x.game==='pic' && practiceLevelOk(x) && (practiceState.theme==='__all__' || (x.theme||'Umumiy')===practiceState.theme));
+  pool = pool || DB.practiceItems.filter(x=>x.game==='pic' && practiceLangOk(x) && practiceLevelOk(x) && (practiceState.theme==='__all__' || (x.theme||'Umumiy')===practiceState.theme));
   const six = practiceShuffle(pool).slice(0,6);
   practiceState.items = six;
   practiceState.left = practiceShuffle(six.map((x,i)=>i));
@@ -5585,7 +5587,7 @@ function practiceNext(){
 }
 function practiceManageHtml(){
   const items = DB.practiceItems;
-  const themes = [...new Set(items.map(x=>x.game+'|'+(x.theme||'Umumiy')))];
+  const themes = [...new Set(items.map(x=>(x.lang||'ru')+'|'+x.game+'|'+(x.theme||'Umumiy')))];
   return `
     <div class="card">
       <h3>⚙️ Mashq kontentini boshqarish</h3>
@@ -5595,8 +5597,8 @@ function practiceManageHtml(){
         <button class="btn gold sm" onclick="openPracticeAddModal('prep')">+ Predlog gapi</button>
         <button class="btn gold sm" onclick="openPracticeAddModal('case')">+ Padej gapi</button>
       </div>
-      ${themes.map(k=>{ const [g,th]=k.split('|'); const list=items.filter(x=>x.game===g && (x.theme||'Umumiy')===th);
-        return `<details style="margin-bottom:8px;"><summary style="cursor:pointer;font-weight:600;">${g==='pic'?'🖼️':g==='case'?'📐':'✍️'} ${th} (${list.length})</summary>
+      ${themes.map(k=>{ const [l,g,th]=k.split('|'); const list=items.filter(x=>(x.lang||'ru')===l && x.game===g && (x.theme||'Umumiy')===th);
+        return `<details style="margin-bottom:8px;"><summary style="cursor:pointer;font-weight:600;">${l==='en'?'🇬🇧':'🇷🇺'} ${g==='pic'?'🖼️':g==='case'?'📐':'✍️'} ${th} (${list.length})</summary>
           <div style="margin-top:8px;">${list.map(x=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:14px;"><span>${(x.level||'easy')==='hard'?'🔴':'🟢'} ${x.prompt} → <b>${x.answer}</b></span><button class="icon-btn rose" onclick="deletePracticeItem('${x.id}')">O'chirish</button></div>`).join('')}</div></details>`; }).join('') || '<div class="empty">Hali kontent yo\'q</div>'}
     </div>`;
 }
@@ -5605,12 +5607,13 @@ function openPracticeAddModal(game){
   const bg = document.createElement('div'); bg.className='modal-bg';
   bg.innerHTML = `<div class="modal">
     <h3>${game==='pic'?"Rasm ↔ So'z qo'shish":game==='case'?"Padej gapi qo'shish":"Predlog gapi qo'shish"}</h3>
+    <label>Til</label><select id="pr-lang"><option value="ru" ${practiceState.lang==='en'?'':'selected'}>🇷🇺 Rus tili</option><option value="en" ${practiceState.lang==='en'?'selected':''}>🇬🇧 Ingliz tili</option></select>
     <label>Mavzu</label><input type="text" id="pr-theme" list="pr-themes" placeholder="masalan: Mebel"><datalist id="pr-themes">${themeOpts}</datalist>
     <label>Daraja</label><select id="pr-level"><option value="easy">🟢 Sodda (boshlang'ich)</option><option value="hard">🔴 Murakkab</option></select>
     ${game==='pic' ? `
       <label>Rasm (emoji)</label><input type="text" id="pr-prompt" placeholder="🪑" maxlength="8">
       <div class="hint">Emoji'ni telefon/kompyuter klaviaturasidan tanlang (Windows: Win + . )</div>
-      <label>Ruscha so'z</label><input type="text" id="pr-answer" placeholder="стул">` : `
+      <label>So'z (tanlangan tilda)</label><input type="text" id="pr-answer" placeholder="стул">` : `
       <label>Gap (bo'sh joy o'rniga ___ yozing)</label><input type="text" id="pr-prompt" placeholder="${game==='case'?'Я читаю ___ (книга).':'Книга лежит ___ столе.'}">
       <label>${game==='case'?"To'g'ri shakl":"To'g'ri predlog"}</label><input type="text" id="pr-answer" placeholder="${game==='case'?'книгу':'на'}">
       <label>Noto'g'ri variantlar (vergul bilan, 2-3 ta)</label><input type="text" id="pr-wrong" placeholder="${game==='case'?'книга, книге, книг':'в, под, из'}">
@@ -5636,11 +5639,12 @@ async function savePracticeItem(game){
   }
   try{
     const level = g('pr-level')||'easy';
-    const row = await insertRow('practice_items', {game, theme, prompt, answer, options, hint, level});
+    const lang = g('pr-lang')||'ru';
+    const row = await insertRow('practice_items', {game, theme, prompt, answer, options, hint, level, lang});
     DB.practiceItems.push(row);
     document.querySelector('.modal-bg').remove();
     renderMain();
-  }catch(e){ console.error(e); err.textContent = "Saqlashda xatolik. SQL (practice_games_migration) ishga tushganini tekshiring."; }
+  }catch(e){ console.error(e); err.textContent = "Saqlashda xatolik. SQL (practice_lang.sql) ishga tushganini tekshiring."; }
 }
 async function deletePracticeItem(id){
   if(!confirm("O'chirilsinmi?")) return;
@@ -5652,30 +5656,39 @@ function renderPractice(u){
   const s = practiceState;
   const style = `<style>.p-card{padding:14px 10px;border:2px solid var(--border,#ddd);border-radius:12px;text-align:center;cursor:pointer;background:var(--card,#fff);font-size:18px;transition:.15s;user-select:none}.p-card:hover{border-color:var(--gold)}.p-sel{border-color:var(--gold);background:rgba(212,175,55,.15)}.p-ok{border-color:#2e9e5b;background:rgba(46,158,91,.18);cursor:default;opacity:.7}.p-wrong{border-color:#d33;background:rgba(211,51,51,.18);animation:pshake .3s}@keyframes pshake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}.p-emoji{font-size:44px;line-height:1.1}.p-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}</style>`;
   if(!s.game){
-    const themeBtns = (game)=> practiceThemes(game).map(th=>`<button class="btn sm outline" data-th="${encodeURIComponent(th)}" onclick="practiceStart('${game}',decodeURIComponent(this.dataset.th))">${th}</button>`).join('') || '<span class="empty">Hozircha mashq yo\'q</span>';
-    const lvls = [['easy',"🟢 Sodda (boshlang'ich)"],['hard',"🔴 Murakkab"],['all',"Hammasi"]];
-    return `${style}
-      <div class="topbar"><div><h1>🧩 Mashq o'yinlari</h1><p>Yakka mashq qiling va bilimingizni sinang</p></div></div>
-      <div class="card">
-        <label>Daraja</label>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">${lvls.map(([k,l])=>`<button class="btn sm ${practiceState.level===k?'gold':'outline'}" onclick="practiceState.level='${k}';renderMain();">${l}</button>`).join('')}</div>
-      </div>
-      <div class="card">
-        <h3>🖼️ Rasm ↔ So'z</h3>
-        <p style="color:var(--muted);margin:6px 0 12px;">Rasmni mos ruscha so'z bilan juftlang.</p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">${themeBtns('pic')}</div>
-      </div>
-      <div class="card">
-        <h3>✍️ Gapdagi predlogni tanlang</h3>
-        <p style="color:var(--muted);margin:6px 0 12px;">Gapdagi bo'sh joyga to'g'ri predlogni qo'ying.</p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">${themeBtns('prep')}</div>
-      </div>
-      <div class="card">
-        <h3>📐 Padejlar (kelishiklar)</h3>
-        <p style="color:var(--muted);margin:6px 0 12px;">Qavs ichidagi so'zni to'g'ri kelishikda tanlang.</p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">${themeBtns('case')}</div>
-      </div>
-      ${u.role!=='student' ? practiceManageHtml() : ''}`;
+    const head = (sub)=>`<div class="topbar"><div><h1>🧩 Mashq o'yinlari</h1><p>${sub}</p></div></div>`;
+    const cnt = (l)=>DB.practiceItems.filter(x=>(x.lang||'ru')===l).length;
+    if(!s.lang){
+      return `${style}${head('Avval tilni tanlang')}
+        <div class="p-grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">
+          <div class="p-card" onclick="practiceState.lang='ru';renderMain();"><div class="p-emoji">🇷🇺</div><div style="font-weight:700;margin-top:6px;">Rus tili</div><div style="font-size:13px;color:var(--muted);">${cnt('ru')} ta mashq</div></div>
+          <div class="p-card" onclick="practiceState.lang='en';renderMain();"><div class="p-emoji">🇬🇧</div><div style="font-weight:700;margin-top:6px;">Ingliz tili</div><div style="font-size:13px;color:var(--muted);">${cnt('en')} ta mashq</div></div>
+        </div>
+        ${u.role!=='student' ? practiceManageHtml() : ''}`;
+    }
+    const langName = s.lang==='en' ? '🇬🇧 Ingliz tili' : '🇷🇺 Rus tili';
+    const gInfo = {pic:["🖼️","Rasm ↔ So'z","Rasmni mos so'z bilan juftlang."], prep:["✍️","Predlogni tanlang","Gapdagi bo'sh joyga to'g'ri predlogni qo'ying."], case:["📐","Padejlar","Qavs ichidagi so'zni to'g'ri kelishikda tanlang."]};
+    const lvls = [['easy',"🟢 Sodda"],['hard',"🔴 Murakkab"],['all',"Hammasi"]];
+    const lvlBar = `<div class="card"><label>Daraja</label><div style="display:flex;gap:8px;flex-wrap:wrap;">${lvls.map(([k,l])=>`<button class="btn sm ${s.level===k?'gold':'outline'}" onclick="practiceState.level='${k}';renderMain();">${l}</button>`).join('')}</div></div>`;
+    if(!s.themePick){
+      const pool = DB.practiceItems.filter(x=>practiceLangOk(x) && practiceLevelOk(x));
+      const names = [...new Set(pool.map(x=>x.theme||'Umumiy'))];
+      const cards = names.map(th=>{ const l=pool.filter(x=>(x.theme||'Umumiy')===th); const games=[...new Set(l.map(x=>x.game))];
+        return `<div class="p-card" data-th="${encodeURIComponent(th)}" onclick="practiceState.themePick=decodeURIComponent(this.dataset.th);renderMain();"><div style="font-size:30px;">${games.map(g=>gInfo[g]?gInfo[g][0]:'').join(' ')}</div><div style="font-weight:700;margin-top:6px;">${th}</div><div style="font-size:13px;color:var(--muted);">${l.length} ta</div></div>`; }).join('');
+      return `${style}${head(langName+' — mavzuni tanlang')}
+        <div style="margin-bottom:12px;"><button class="btn outline sm" onclick="practiceHome()">← Tillar</button></div>
+        ${lvlBar}
+        <div class="p-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));">${cards || '<div class="empty">Bu tilda hozircha mashq yo\'q'+(u.role!=='student'?' — pastdan qo\'shing':'')+'</div>'}</div>
+        ${u.role!=='student' ? practiceManageHtml() : ''}`;
+    }
+    const th = s.themePick;
+    const pool = DB.practiceItems.filter(x=>practiceLangOk(x) && practiceLevelOk(x) && (x.theme||'Umumiy')===th);
+    const games = ['pic','prep','case'].filter(g=>pool.some(x=>x.game===g));
+    const gcards = games.map(g=>`<div class="p-card" onclick="practiceStart('${g}',practiceState.themePick)"><div class="p-emoji">${gInfo[g][0]}</div><div style="font-weight:700;margin-top:6px;">${gInfo[g][1]}</div><div style="font-size:13px;color:var(--muted);margin-top:4px;">${gInfo[g][2]}</div><div style="font-size:13px;margin-top:6px;">${pool.filter(x=>x.game===g).length} ta</div></div>`).join('');
+    return `${style}${head(langName+' — '+th)}
+      <div style="margin-bottom:12px;"><button class="btn outline sm" onclick="practiceState.themePick=null;renderMain();">← Mavzular</button></div>
+      ${lvlBar}
+      <div class="p-grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">${gcards || '<div class="empty">Bu darajada o\'yin yo\'q — darajani o\'zgartiring</div>'}</div>`;
   }
   const back = `<button class="btn outline sm" onclick="practiceReset();renderMain();">← Orqaga</button>`;
   if(s.game==='pic'){
