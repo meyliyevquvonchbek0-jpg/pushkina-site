@@ -956,14 +956,24 @@ async function submitRegistration(){
   if(DB.users.some(u=>u.username===username)){ err.textContent = 'Bu login band. Boshqasini tanlang.'; return; }
   const slot = scheduleSlotId ? DB.schedule.find(x=>x.id===scheduleSlotId) : null;
   const group = slot ? slot.subject : '';
+  let newUser = null;
   try{
-    const newUser = await insertRow('users', {username, password, role:'student', name, phone:'', status:'pending'});
+    newUser = await insertRow('users', {username, password, role:'student', name, phone:'', status:'pending'});
+    let newStudent;
+    try{
+      newStudent = await insertRow('students', {userId:newUser.id, group, teacherId, telegramChatId, scheduleSlotId, onlineRequested, onlineApproved:false});
+    }catch(e1){
+      // eski bazada online_requested / online_approved ustunlari bo'lmasligi mumkin — ularsiz qayta urinamiz
+      console.warn('students insert (online ustunlari bilan) xato, ularsiz urinilmoqda', e1);
+      newStudent = await insertRow('students', {userId:newUser.id, group, teacherId, telegramChatId, scheduleSlotId});
+    }
     DB.users.push(newUser);
-    const newStudent = await insertRow('students', {userId:newUser.id, group, teacherId, telegramChatId, scheduleSlotId, onlineRequested, onlineApproved:false});
     DB.students.push(newStudent);
   }catch(e){
-    err.textContent = 'Xatolik yuz berdi. Qayta urinib ko\'ring.';
     console.error(e);
+    // yarim qolgan (o'quvchi qatorisiz) foydalanuvchini o'chiramiz — aks holda login band bo'lib qoladi
+    if(newUser){ try{ await deleteRow('users', newUser.id); }catch(_){ } }
+    err.textContent = 'Xatolik: ' + ((e && (e.message||e.details)) || 'noma\'lum') + ' — administratorga xabar bering (students_fix.sql kerak).';
     return;
   }
   document.querySelector('.modal-bg').remove();
@@ -2265,18 +2275,24 @@ async function saveStudent(){
     err.textContent = 'Barcha majburiy maydonlarni to\'ldiring.';
     return;
   }
+  if(!teacherId){
+    err.textContent = "O'qituvchini tanlang — aks holda o'quvchi hech bir o'qituvchining ro'yxatida chiqmaydi.";
+    return;
+  }
   if(DB.users.some(u=>u.username===username)){
     err.textContent = 'Bu login band. Boshqa login tanlang.';
     return;
   }
+  let newUser = null;
   try{
-    const newUser = await insertRow('users', {username, password, role:'student', name, phone:''});
+    newUser = await insertRow('users', {username, password, role:'student', name, phone:''});
+    const newStudent = await insertRow('students', {userId:newUser.id, group, teacherId, parentPhone, level, telegramChatId, scheduleSlotId});
     DB.users.push(newUser);
-    const newStudent = await insertRow('students', {userId:newUser.id, group, teacherId: teacherId||null, parentPhone, level, telegramChatId, scheduleSlotId});
     DB.students.push(newStudent);
   }catch(e){
-    err.textContent = 'Xatolik yuz berdi. Qayta urinib ko\'ring.';
     console.error(e);
+    if(newUser){ try{ await deleteRow('users', newUser.id); }catch(_){ } }
+    err.textContent = 'Xatolik: ' + ((e && (e.message||e.details)) || 'noma\'lum') + ' (students_fix.sql kerak bo\'lishi mumkin).';
     return;
   }
   document.querySelector('.modal-bg').remove();
