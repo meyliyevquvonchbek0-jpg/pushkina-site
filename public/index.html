@@ -533,9 +533,10 @@ const FIELD_MAP = {
   duel_sentences: {},
   teacher_payouts: {teacherId:'teacher_id'},
   practice_items: {},
+  schools: {createdAt:'created_at'},
   teacher_checkins: {teacherId:'teacher_id', distanceMeters:'distance_meters'},
   flashcard_sets: {teacherId:'teacher_id'},
-  students: {userId:'user_id', teacherId:'teacher_id', parentPhone:'parent_phone', telegramChatId:'telegram_chat_id', scheduleSlotId:'schedule_slot_id', onlineRequested:'online_requested', onlineApproved:'online_approved'},
+  students: {schoolId:'school_id', userId:'user_id', teacherId:'teacher_id', parentPhone:'parent_phone', telegramChatId:'telegram_chat_id', scheduleSlotId:'schedule_slot_id', onlineRequested:'online_requested', onlineApproved:'online_approved'},
   schedule: {teacherId:'teacher_id'},
   attendance: {studentId:'student_id', tasksDone:'tasks_done'},
   payments: {studentId:'student_id', paidUntil:'paid_until', installmentPart:'installment_part', installmentTotal:'installment_total', nextInstallmentAmount:'next_installment_amount'},
@@ -658,7 +659,8 @@ let DB = {
   duelWords: [],
   duelSentences: [],
   teacherPayouts: [],
-  practiceItems: []
+  practiceItems: [],
+  schools: []
 };
 let deferredInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', (e)=>{
@@ -819,7 +821,7 @@ async function boot(){
       users, teachers, students, schedule, attendance, payments, videos,
       materials, announcements, ratings, settingsRows, tests, testQuestions,
       testAttempts, homework, homeworkStatus, rewards, rewardRequests,
-      reviews, dailyTotals, nazoratScores, teacherCheckins, flashcardSets, teacherRatings, dailyWords, botQuestions, videoProgress, teacherPayouts, practiceItems
+      reviews, dailyTotals, nazoratScores, teacherCheckins, flashcardSets, teacherRatings, dailyWords, botQuestions, videoProgress, teacherPayouts, practiceItems, schools
     ] = await Promise.all([
       fetchTable('users_public'), fetchTable('teachers'), fetchTable('students'),
       fetchTable('schedule'), fetchTable('attendance'), fetchTable('payments'),
@@ -830,7 +832,7 @@ async function boot(){
       fetchTable('reviews'), fetchTable('daily_totals'), fetchTable('nazorat_scores'),
       fetchTable('teacher_checkins'), fetchTable('flashcard_sets'), fetchTable('teacher_ratings'),
       fetchTable('daily_words'), fetchTable('bot_questions'), fetchTable('video_progress'),
-      fetchTable('teacher_payouts'), fetchTable('practice_items')
+      fetchTable('teacher_payouts'), fetchTable('practice_items'), fetchTable('schools')
     ]);
     DB.users = users; DB.teachers = teachers; DB.students = students;
     DB.schedule = schedule; DB.attendance = attendance; DB.payments = payments;
@@ -848,6 +850,7 @@ async function boot(){
     DB.videoProgress = videoProgress;
     DB.teacherPayouts = teacherPayouts;
     DB.practiceItems = practiceItems;
+    DB.schools = schools || [];
     try{ renderSocialFloat(); }catch(e){ console.error('renderSocialFloat error', e); }
     try{ renderLandingContent(); }catch(e){ console.error('renderLandingContent error', e); }
     try{ renderLangSwitchers(); }catch(e){ console.error('renderLangSwitchers error', e); }
@@ -923,14 +926,18 @@ function openRegisterModal(){
     <div class="modal">
       <h3>O'quvchi sifatida ro'yxatdan o'tish</h3>
       <label>Ism familiya</label><input type="text" id="reg-name">
+      <label>Siz kimsiz?</label>
+      <select id="reg-kind" onchange="onRegKindChange()"><option value="center">Markaz o'quvchisiman</option>${(DB.schools||[]).length?'<option value="school">Maktab o\'quvchisiman</option>':''}</select>
+      <div id="reg-school-wrap" style="display:none;"><label>Maktabingiz</label>
+      <select id="reg-school">${(DB.schools||[]).map(sc=>`<option value="${sc.id}">${sc.name}</option>`).join('')}</select></div>
       <label>O'qituvchingiz</label>
       <select id="reg-teacher" onchange="onTeacherSelectChange('reg-teacher','reg-schedule')"><option value="">— tanlang —</option>${teacherOpts}</select>
-      <label>Dars vaqti</label>
-      <select id="reg-schedule"><option value="">— avval o'qituvchini tanlang —</option></select>
+      <div id="reg-sched-wrap"><label>Dars vaqti</label>
+      <select id="reg-schedule"><option value="">— avval o'qituvchini tanlang —</option></select></div>
       <label>Login (o'zingiz tanlang)</label><input type="text" id="reg-username">
       <label>Parol</label><input type="password" id="reg-password">
       <label>Telegram Chat ID (ixtiyoriy, eslatmalar uchun)</label><input type="text" id="reg-telegram" placeholder="masalan: 123456789">
-      <label style="display:flex;align-items:center;gap:8px;font-weight:normal;margin-top:6px;">
+      <label id="reg-online-wrap" style="display:flex;align-items:center;gap:8px;font-weight:normal;margin-top:6px;">
         <input type="checkbox" id="reg-online" style="width:auto;"> 🖥️ Onlayn darslarda qatnashmoqchiman
       </label>
       <div class="hint" style="margin-top:-4px;">Bu so'rov admin tomonidan alohida tasdiqlanadi.</div>
@@ -943,24 +950,34 @@ function openRegisterModal(){
     </div>`;
   document.body.appendChild(bg);
 }
+function onRegKindChange(){
+  const sch = document.getElementById('reg-kind').value==='school';
+  document.getElementById('reg-school-wrap').style.display = sch?'block':'none';
+  document.getElementById('reg-sched-wrap').style.display = sch?'none':'block';
+  document.getElementById('reg-online-wrap').style.display = sch?'none':'flex';
+}
 async function submitRegistration(){
   const name = document.getElementById('reg-name').value.trim();
   const teacherId = document.getElementById('reg-teacher').value;
-  const scheduleSlotId = document.getElementById('reg-schedule').value || null;
+  const isSchool = document.getElementById('reg-kind').value==='school';
+  const schoolId = isSchool ? document.getElementById('reg-school').value : null;
+  const scheduleSlotId = isSchool ? null : (document.getElementById('reg-schedule').value || null);
   const username = document.getElementById('reg-username').value.trim();
   const password = document.getElementById('reg-password').value;
   const telegramChatId = document.getElementById('reg-telegram').value.trim();
-  const onlineRequested = document.getElementById('reg-online').checked;
+  const onlineRequested = isSchool ? false : document.getElementById('reg-online').checked;
   const err = document.getElementById('reg-err');
   if(!name || !teacherId || !username || !password){ err.textContent = 'Barcha maydonlarni to\'ldiring.'; return; }
   if(DB.users.some(u=>u.username===username)){ err.textContent = 'Bu login band. Boshqasini tanlang.'; return; }
   const slot = scheduleSlotId ? DB.schedule.find(x=>x.id===scheduleSlotId) : null;
-  const group = slot ? slot.subject : '';
+  const group = isSchool ? schoolName(schoolId) : (slot ? slot.subject : '');
   let newUser = null;
   try{
     newUser = await insertRow('users', {username, password, role:'student', name, phone:'', status:'pending'});
     let newStudent;
-    try{
+    if(isSchool){
+      newStudent = await insertRow('students', {userId:newUser.id, group, teacherId, telegramChatId, schoolId});
+    } else try{
       newStudent = await insertRow('students', {userId:newUser.id, group, teacherId, telegramChatId, scheduleSlotId, onlineRequested, onlineApproved:false});
     }catch(e1){
       // eski bazada online_requested / online_approved ustunlari bo'lmasligi mumkin — ularsiz qayta urinamiz
@@ -979,7 +996,7 @@ async function submitRegistration(){
   document.querySelector('.modal-bg').remove();
   alert('So\'rovingiz yuborildi. Administrator tasdiqlagach, login va parolingiz bilan kira olasiz.');
   if(DB.settings.adminTelegramChatId){
-    sendTelegramMessage(DB.settings.adminTelegramChatId, `📩 Yangi ro'yxatdan o'tish so'rovi!\nIsm: ${name}\nO'qituvchi: ${teacherName(teacherId)}\nLogin: ${username}\n\nSaytda "So'rovlar" bo'limida tasdiqlang.`);
+    sendTelegramMessage(DB.settings.adminTelegramChatId, `📩 Yangi ro'yxatdan o'tish so'rovi!\nIsm: ${name}\n${isSchool?'Maktab: '+schoolName(schoolId)+'\n':''}O'qituvchi: ${teacherName(teacherId)}\nLogin: ${username}\n\nSaytda "So'rovlar" bo'limida tasdiqlang.`);
   }
 }
 async function approveRequest(userId, btn){
@@ -1693,6 +1710,7 @@ const NAV = {
     {id:'telegram-reminders', label:'Telegram eslatmalar', icon:'✈'},
     {id:'live-class', label:'Onlayn darslar', icon:'●'},
     {id:'requests', label:'So\'rovlar', icon:'✉'},
+    {id:'schools', label:'🏫 Maktablar', icon:'🏫'},
     {id:'users', label:'Foydalanuvchilar', icon:'●'},
     {id:'settings', label:'Sozlamalar', icon:'⚙'},
     {id:'translator', label:'Tarjimon', icon:'🌐'}
@@ -1736,6 +1754,9 @@ const NAV = {
     {id:'translator', label:'Tarjimon', icon:'🌐'}
   ]
 };
+const SCHOOL_TABS = ['home','practice','duel','leaderboard'];
+function mySchoolId(u){ if(!u || u.role!=='student') return null; const s=DB.students.find(x=>x.userId===u.id); return (s && s.schoolId) || null; }
+function schoolName(id){ const sc=(DB.schools||[]).find(x=>x.id===id); return sc?sc.name:'Maktab'; }
 function renderNotifBell(){
   const slot = document.getElementById('notif-bell-slot');
   if(!slot || !session) return;
@@ -1766,7 +1787,8 @@ function renderNav(){
   renderNotifBell();
   const list = document.getElementById('nav-list');
   list.innerHTML = '';
-  NAV[u.role].forEach(item=>{
+  const navList = mySchoolId(u) ? NAV.student.filter(i=>SCHOOL_TABS.includes(i.id)) : (u.role==='admin' ? NAV.admin : NAV[u.role]);
+  navList.forEach(item=>{
     const div = document.createElement('div');
     div.className = 'nav-item' + (activeTab===item.id ? ' active' : '');
     div.innerHTML = `<span>${item.icon}</span><span>${t(item.label)}</span>`;
@@ -1783,6 +1805,7 @@ function renderMain(){
   const u = curUser();
   const el = document.getElementById('main-content');
   let html = '';
+  if(mySchoolId(u) && !SCHOOL_TABS.includes(activeTab)) activeTab = 'home';
   if(activeTab==='home') html = renderHome(u);
   else if(activeTab==='teachers') html = renderTeachers();
   else if(activeTab==='students') html = renderStudents();
@@ -1818,6 +1841,7 @@ function renderMain(){
   else if(activeTab==='live-game') html = renderLiveGame(u);
   else if(activeTab==='duel') html = renderDuel(u);
   else if(activeTab==='practice') html = renderPractice(u);
+  else if(activeTab==='schools') html = renderSchools();
   else if(activeTab==='take-test') html = renderTakeTest(u);
   else if(activeTab==='leaderboard') html = renderLeaderboard(u);
   else if(activeTab==='rewards') html = renderRewards(u);
@@ -1866,7 +1890,21 @@ async function deleteAnnouncement(id){
 }
 
 /* ============ HOME ============ */
+function renderSchoolHome(u){
+  const s = DB.students.find(x=>x.userId===u.id);
+  return `<div class="topbar"><div><h1>Salom, ${u.name}!</h1><p>🏫 ${schoolName(s.schoolId)}</p></div></div>
+    <div class="grid cols-3">
+      <div class="metric"><div class="lbl">Coinlarim</div><div class="val gold">${s.coins||0} 🪙</div></div>
+    </div>
+    <div class="card" style="margin-top:16px;text-align:center;">
+      <div style="font-size:40px;">🧩</div>
+      <h3>Mashq o'yinlari</h3>
+      <p style="color:var(--muted);">Rus va ingliz tili: lug'at, grammatika, zamonlar</p>
+      <button class="btn gold" onclick="goto_('practice')">Boshlash</button>
+    </div>${dailyWordCardHtml()}`;
+}
 function renderHome(u){
+  if(mySchoolId(u)) return renderSchoolHome(u);
   if(u.role==='admin'){
     const totalStudents = DB.students.length;
     const totalTeachers = DB.teachers.length;
@@ -2184,7 +2222,7 @@ function renderStudents(){
     const tu = t ? DB.users.find(x=>x.id===t.userId) : null;
     const pay = getPaymentStatus(s.id);
     return `<tr ${s.frozen?'style="opacity:.55;"':''}>
-      <td>${u.name}${s.frozen?' <span class="pill gray">❄️ Muzlatilgan</span>':''}${s.onlineApproved?' <span class="pill green">🖥️ Onlayn</span>':(s.onlineRequested?' <span class="pill rose">🖥️ So\'ragan</span>':'')}</td>
+      <td>${u.name}${s.schoolId?' <span class="pill gray">🏫 '+schoolName(s.schoolId)+'</span>':''}${s.frozen?' <span class="pill gray">❄️ Muzlatilgan</span>':''}${s.onlineApproved?' <span class="pill green">🖥️ Onlayn</span>':(s.onlineRequested?' <span class="pill rose">🖥️ So\'ragan</span>':'')}</td>
       <td>${s.group||'—'}</td>
       <td>${s.level||'—'}</td>
       <td>${tu?tu.name:'—'}</td>
@@ -3218,6 +3256,7 @@ function renderMyRatings(u){
 /* ============ PAYMENTS ============ */
 function getPaymentStatus(studentId){
   if(!studentId) return {ok:false, label:'Ma\'lumot yo\'q'};
+  { const _s=DB.students.find(x=>x.id===studentId); if(_s && _s.schoolId) return {ok:true, label:'Maktab', school:true}; }
   const recs = DB.payments.filter(p=>p.studentId===studentId).sort((a,b)=>b.paidUntil.localeCompare(a.paidUntil));
   if(recs.length===0) return {ok:false, label:'To\'lov qilinmagan'};
   const last = recs[0];
@@ -5302,11 +5341,11 @@ function setupDuelPresenceAndInvites(){
   const presCh = sb.channel('online-students', {config:{presence:{key:s.id}}});
   presCh.on('presence', {event:'sync'}, ()=>{
     const state = presCh.presenceState();
-    duelState.onlineStudents = Object.keys(state).map(k=>state[k][0]).filter(p=>p.studentId!==s.id);
+    duelState.onlineStudents = Object.keys(state).map(k=>state[k][0]).filter(p=>p.studentId!==s.id && (p.schoolId||null)===(s.schoolId||null));
     if(activeTab==='duel') renderMain();
   });
   presCh.subscribe(async (status)=>{
-    if(status==='SUBSCRIBED'){ await presCh.track({studentId:s.id, studentName:u.name}); }
+    if(status==='SUBSCRIBED'){ await presCh.track({studentId:s.id, studentName:u.name, schoolId:s.schoolId||null}); }
   });
   globalDuelChannels.presence = presCh;
 
@@ -5587,11 +5626,32 @@ function pOptions(ans, cand, fallback, n){
 function pStarsRatio(c,t){ const r = t?c/t:0; return r>=0.9?3 : r>=0.7?2 : r>=0.4?1 : 0; }
 function practiceHome(){ practiceReset(); practiceState.lang=null; practiceState.themePick=null; renderMain(); }
 function practiceReset(){
-  const s = practiceState; if(s.timer){ clearInterval(s.timer); }
+  const s = practiceState; if(s.timer){ clearInterval(s.timer); } pClockStop();
   Object.assign(s,{game:null,theme:null,items:[],idx:0,score:0,mistakes:0,answered:false,picked:null,left:[],right:[],selL:null,selR:null,matched:[],done:false,cards:[],flipped:[],moves:0,lock:false,timer:null,timeLeft:60,typed:'',hintUsed:false,letters:[],built:[],queue:[],round:0,result:null,pool:[]});
 }
+let pClk=null, pT0=0;
+const P_QLIMIT=['prep','case','cloze','syn','listen','odd'], P_QSEC=15;
+function pFmt(sec){ const m=Math.floor(sec/60), r=sec%60; return m+':'+(r<10?'0':'')+r; }
+function pClockStart(){
+  pClockStop(); pT0=Date.now();
+  pClk=setInterval(()=>{
+    if(activeTab!=='practice' || !practiceState.game || practiceState.done){ pClockStop(); return; }
+    const el=document.getElementById('p-clock'); if(el) el.textContent=pFmt(Math.round((Date.now()-pT0)/1000));
+    const sq=practiceState;
+    if(P_QLIMIT.includes(sq.game) && !sq.answered){
+      sq.qLeft--; const q=document.getElementById('p-q'); if(q) q.textContent=sq.qLeft;
+      if(sq.qLeft<=0) practiceAnswer('__timeout__');
+    }
+  },1000);
+}
+function pClockStop(){ if(pClk){ clearInterval(pClk); pClk=null; } }
 function practiceFinish(correct, total, stars, line){
   const s = practiceState; if(s.timer){ clearInterval(s.timer); s.timer=null; }
+  const elapsed = (pClk && s.game!=='quiz') ? Math.round((Date.now()-pT0)/1000) : null; pClockStop();
+  if(elapsed!==null && stars===2){
+    const target = s.game==='match'?75 : s.game==='memory'?60 : Math.max(1,s.items.length)*9;
+    if(elapsed<=target){ stars=3; line=(line?line+' · ':'')+'⚡ Tezlik bonusi!'; }
+  }
   s.done = true;
   const key = s.lang+'|'+s.theme+'|'+s.game;
   const m = pStars(s.uid); const prev = m[key]||0;
@@ -5603,7 +5663,13 @@ function practiceFinish(correct, total, stars, line){
     const stu = (DB.students||[]).find(x=>x.userId===s.uid);
     if(stu){ coinMsg = '+2 🪙'; (async()=>{ try{ const nc=(stu.coins||0)+2; await updateRow('students', stu.id, {coins:nc}); stu.coins=nc; }catch(e){ console.error(e); } })(); }
   }
-  s.result = {correct, total, stars, streak:st.n, coinMsg, line:line||''};
+  let best=null, newBest=false;
+  if(elapsed!==null && stars>=2){
+    const bm = (function(){ try{ return JSON.parse(localStorage.getItem('pbest_'+s.uid)||'{}'); }catch(e){ return {}; } })();
+    if(bm[key]==null || elapsed<bm[key]){ newBest = bm[key]!=null; bm[key]=elapsed; pSave('pbest_'+s.uid, bm); }
+    best = bm[key];
+  }
+  s.result = {correct, total, stars, streak:st.n, coinMsg, line:line||'', elapsed, best, newBest};
 }
 function practiceThemeStars(theme){
   const m = pStars(practiceState.uid); let got=0, max=0;
@@ -5662,6 +5728,7 @@ function practiceStart(g, theme){
     s.items = rounds;
   }
   else { s.items = pChoiceFromItems(g, pool); }
+  s.qLeft=P_QSEC; if(g!=='quiz') pClockStart();
   renderMain();
   if(g==='listen') setTimeout(()=>{ if(practiceState.game==='listen' && !practiceState.done){ pSpeak(practiceState.items[practiceState.idx].speak); } }, 250);
 }
@@ -5733,7 +5800,7 @@ function practiceAnswer(opt){
   if(s.game==='quiz'){ const at=s.idx; setTimeout(()=>{ if(practiceState.game==='quiz' && !practiceState.done && practiceState.idx===at) practiceNext(); }, 550); }
 }
 function practiceNext(){
-  const s = practiceState; s.idx++; s.answered=false; s.picked=null; s.typed=''; s.hintUsed=false;
+  const s = practiceState; s.idx++; s.answered=false; s.picked=null; s.typed=''; s.hintUsed=false; s.qLeft=P_QSEC;
   if(s.idx>=s.items.length){
     if(s.game==='quiz'){ const c=s.score; practiceFinish(c, s.score+s.mistakes, c>=12?3:c>=8?2:c>=4?1:0, "60 soniyada to'g'ri javoblar: "+c); }
     else practiceFinish(s.score, s.items.length, pStarsRatio(s.score, s.items.length), '');
@@ -5831,7 +5898,7 @@ async function deletePracticeItem(id){
 function renderPractice(u){
   const s = practiceState; s.uid = u.id;
   const style = `<style>.p-card{padding:14px 10px;border:2px solid var(--border,#ddd);border-radius:12px;text-align:center;cursor:pointer;background:var(--card,#fff);font-size:18px;transition:.15s;user-select:none}.p-card:hover{border-color:var(--gold)}.p-sel{border-color:var(--gold);background:rgba(212,175,55,.15)}.p-ok{border-color:#2e9e5b;background:rgba(46,158,91,.18);cursor:default;opacity:.7}.p-wrong{border-color:#d33;background:rgba(211,51,51,.18);animation:pshake .3s}@keyframes pshake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}.p-emoji{font-size:44px;line-height:1.1}.p-txt{font-size:19px;line-height:1.25}.p-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.p-mem{min-height:84px;display:flex;align-items:center;justify-content:center;font-size:30px}.p-slot{display:inline-flex;align-items:center;justify-content:center;width:28px;height:42px;border-bottom:3px solid var(--gold);font-size:24px;font-weight:700;margin:0 2px}.p-chip{display:inline-flex;align-items:center;justify-content:center;min-width:46px;height:50px;padding:0 6px;margin:4px;border:2px solid var(--border,#ddd);border-radius:10px;font-size:24px;font-weight:700;cursor:pointer;background:var(--card,#fff)}.p-chip.used{opacity:.25;cursor:default}.p-in{width:100%;padding:12px;font-size:20px;border:2px solid var(--border,#ddd);border-radius:10px;text-align:center;background:var(--card,#fff);color:inherit}</style>`;
-  const head = (title, sub, back)=>`<div class="topbar"><div><h1>${title}</h1><p>${sub||''}</p></div>${back||''}</div>`;
+  const head = (title, sub, back)=>`<div class="topbar"><div><h1>${title}</h1><p>${sub||''}${(s.game && !s.done && pClk && s.game!=='quiz')?` · ⏱️ <b id="p-clock">${pFmt(Math.round((Date.now()-pT0)/1000))}</b>`:''}</p></div>${back||''}</div>`;
   const backBtn = `<button class="btn outline sm" onclick="practiceReset();renderMain();">← Orqaga</button>`;
   if(!s.game){
     const streak = pStreakInfo(u.id); const fire = (streak.last===pToday()||streak.last===pToday(new Date(Date.now()-864e5))) && streak.n>0 ? `<span style="margin-left:8px;">🔥 ${streak.n} kun</span>` : '';
@@ -5874,6 +5941,7 @@ function renderPractice(u){
         <div style="font-size:48px;">${r.stars>=3?'🏆':r.stars>=2?'👍':'📚'}</div>
         <div style="font-size:34px;margin:6px 0;">${'⭐'.repeat(r.stars)}${'☆'.repeat(3-r.stars)}</div>
         <div style="font-size:20px;margin:8px 0;">${r.line || (r.correct+' / '+r.total)}</div>
+        ${r.elapsed!=null?`<div style="margin-bottom:6px;">⏱️ Vaqt: <b>${pFmt(r.elapsed)}</b>${r.best!=null?' · Eng yaxshi: <b>'+pFmt(r.best)+'</b>':''}${r.newBest?' 🎉 Yangi rekord!':''}</div>`:''}
         <div style="color:var(--muted);margin-bottom:12px;">🔥 ${r.streak} kunlik seriya ${r.coinMsg?' · '+r.coinMsg+' (3 yulduz uchun!)':''}</div>
         <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
           <button class="btn gold" onclick="practiceStart('${s.game}',practiceState.theme)">Qayta urinish</button>
@@ -5930,13 +5998,13 @@ function renderPractice(u){
   else if(sentence) top = `<div style="font-size:22px;text-align:center;margin:10px 0 6px;">${sentence}</div>`;
   else if(s.game==='quiz' || s.game==='odd' || s.game==='syn') top = `<div style="text-align:center;margin:10px 0 12px;">${s.game==='quiz'?pShow(it.prompt):`<span style="font-size:21px;">${it.prompt}</span>`}</div>`;
   else top = `<div style="font-size:22px;text-align:center;margin:10px 0 6px;">${it.prompt}</div>`;
-  const sub = timed ? `⏱️ <b id="p-timer">${s.timeLeft}</b> s · To'g'ri: ${s.score}` : (s.idx+1)+' / '+s.items.length+" · To'g'ri: "+s.score;
+  const sub = timed ? `⏱️ <b id="p-timer">${s.timeLeft}</b> s · To'g'ri: ${s.score}` : (s.idx+1)+' / '+s.items.length+" · To'g'ri: "+s.score+((P_QLIMIT.includes(s.game)&&!s.answered)?` · ⏳ <b id="p-q">${s.qLeft}</b> s`:'');
   return `${style}${head(def.ico+' '+def.name, sub, backBtn)}
     <div class="card">
       ${top}
       ${it.hint && !timed && s.game!=='odd'?`<div style="text-align:center;color:var(--muted);margin-bottom:14px;">${it.hint}</div>`:'<div style="margin-bottom:14px;"></div>'}
       <div class="p-grid">${it.opts.map(o=>{ let cls=''; if(s.answered){ if(o===it.answer) cls='p-ok'; else if(o===s.picked) cls='p-wrong'; } return `<div class="p-card ${cls}" style="display:flex;align-items:center;justify-content:center;min-height:64px;" data-o="${encodeURIComponent(o)}" onclick="practiceAnswer(decodeURIComponent(this.dataset.o))">${pShow(o)}</div>`; }).join('')}</div>
-      ${s.answered && !timed?`<div style="text-align:center;margin-top:16px;"><div style="margin-bottom:10px;">${s.picked===it.answer?'✅ To\'g\'ri!':'❌ To\'g\'ri javob: <b>'+it.answer+'</b>'}</div><button class="btn gold" onclick="practiceNext()">${s.idx+1>=s.items.length?'Natijani ko\'rish':'Keyingi →'}</button></div>`:''}
+      ${s.answered && !timed?`<div style="text-align:center;margin-top:16px;"><div style="margin-bottom:10px;">${s.picked===it.answer?'✅ To\'g\'ri!':(s.picked==='__timeout__'?'⏰ Vaqt tugadi! ':'❌ ')+'To\'g\'ri javob: <b>'+it.answer+'</b>'}</div><button class="btn gold" onclick="practiceNext()">${s.idx+1>=s.items.length?'Natijani ko\'rish':'Keyingi →'}</button></div>`:''}
     </div>`;
 }
 
@@ -6032,7 +6100,8 @@ function renderDuelActive(u){
 function renderLeaderboard(u){
   let myTeacherId = null;
   if(u.role==='teacher'){ const t = DB.teachers.find(x=>x.userId===u.id); myTeacherId = t?t.id:null; }
-  const sorted = DB.students.slice().sort((a,b)=>(b.coins||0)-(a.coins||0)).slice(0,30);
+  const mySch = mySchoolId(u);
+  const sorted = DB.students.filter(s=> mySch ? s.schoolId===mySch : !s.schoolId).sort((a,b)=>(b.coins||0)-(a.coins||0)).slice(0,30);
   const rows = sorted.map((s,i)=>{
     const su = DB.users.find(x=>x.id===s.userId);
     let name;
@@ -6041,7 +6110,7 @@ function renderLeaderboard(u){
     return `<tr><td>${i+1}</td><td>${name}</td><td>${s.coins||0} 🪙</td></tr>`;
   }).join('');
   return `
-    <div class="topbar"><div><h1>${t('Reyting')}</h1><p>Eng ko'p coin to'plagan o'quvchilar</p></div></div>
+    <div class="topbar"><div><h1>${t('Reyting')}</h1><p>${mySch?'🏫 '+schoolName(mySch)+' — eng ko\'p coin to\'plaganlar':'Eng ko\'p coin to\'plagan o\'quvchilar'}</p></div></div>
     <div class="card">
       <table>
         <thead><tr><th>#</th><th>Ism</th><th>Coin</th></tr></thead>
@@ -6434,6 +6503,26 @@ let usersTeacherFilter = null;
 function setUsersTeacherFilter(teacherId){
   usersTeacherFilter = teacherId || null;
   renderMain();
+}
+function renderSchools(){
+  const rows = (DB.schools||[]).map(sc=>{
+    const list = DB.students.filter(s=>s.schoolId===sc.id);
+    const names = list.slice(0,6).map(s=>{ const u=DB.users.find(x=>x.id===s.userId); return u?u.name:''; }).filter(Boolean).join(', ');
+    return `<tr><td><b>${sc.name}</b></td><td>${list.length}</td><td style="font-size:13px;color:var(--muted);">${names||'—'}${list.length>6?' …':''}</td><td><button class="icon-btn rose" onclick="deleteSchool('${sc.id}')">O'chirish</button></td></tr>`;
+  }).join('');
+  return `<div class="topbar"><div><h1>🏫 Maktablar</h1><p>Hamkor maktab o'quvchilari faqat mashq o'yinlari, bellashuv, kunning so'zi va reytingni ko'radi</p></div></div>
+    <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;"><input type="text" id="new-school-name" placeholder="Maktab nomi (masalan: Invest xususiy maktabi)" style="flex:1;min-width:220px;"><button class="btn gold" onclick="addSchool()">Qo'shish</button></div></div>
+    <div class="card" style="margin-top:16px;"><table><thead><tr><th>Maktab</th><th>O'quvchilar</th><th>Ro'yxat</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="4" class="empty">Hali maktab qo\'shilmagan</td></tr>'}</tbody></table></div>`;
+}
+async function addSchool(){
+  const name = document.getElementById('new-school-name').value.trim(); if(!name) return;
+  try{ const r = await insertRow('schools',{name}); DB.schools.push(r); renderMain(); }
+  catch(e){ console.error(e); alert("Xatolik: "+((e&&e.message)||'')+" — schools_migration.sql ishga tushirilganmi?"); }
+}
+async function deleteSchool(id){
+  if(DB.students.some(s=>s.schoolId===id)){ alert("Bu maktabda o'quvchilar bor. Avval ularni o'chiring."); return; }
+  if(!confirm("Maktabni o'chirasizmi?")) return;
+  try{ await deleteRow('schools', id); DB.schools = DB.schools.filter(x=>x.id!==id); renderMain(); }catch(e){ console.error(e); alert('Xatolik'); }
 }
 function renderUsers(){
   const admins = DB.users.filter(u=>u.role==='admin');
