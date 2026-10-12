@@ -5571,6 +5571,7 @@ function pCefr(x){ return x.cefr || (x.game==='pic' ? (x.level==='hard'?'A2':'A1
 function practiceLangOk(x){ return (x.lang||'ru')===practiceState.lang; }
 function practiceLevelOk(x){ const L=practiceState.level; return L==='all' || pCefr(x)===L; }
 function pPool(src, theme){ return DB.practiceItems.filter(x=>x.game===src && practiceLangOk(x) && practiceLevelOk(x) && (x.theme||'Umumiy')===theme); }
+function pGameOk(g, theme){ const d=P_GAMES[g]; const pool=pPool(d.src,theme); if(pool.length<d.min) return false; if(g==='anagram') return pool.filter(x=>/^[^\s\-]{3,12}$/.test(x.answer)).length>=3; return true; }
 function pStore(k,d){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(e){ return d; } }
 function pSave(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
 function pStars(uid){ return pStore('pstars_'+uid,{}); }
@@ -5606,7 +5607,7 @@ function practiceFinish(correct, total, stars, line){
 }
 function practiceThemeStars(theme){
   const m = pStars(practiceState.uid); let got=0, max=0;
-  Object.keys(P_GAMES).forEach(g=>{ const def=P_GAMES[g]; if(pPool(def.src,theme).length>=def.min){ max+=3; got+=(m[practiceState.lang+'|'+theme+'|'+g]||0); } });
+  Object.keys(P_GAMES).forEach(g=>{ if(pGameOk(g,theme)){ max+=3; got+=(m[practiceState.lang+'|'+theme+'|'+g]||0); } });
   return {got,max};
 }
 // ---- boshlash ----
@@ -5859,7 +5860,7 @@ function renderPractice(u){
         ${u.role!=='student' ? practiceManageHtml() : ''}`;
     }
     const th = s.themePick; const m = pStars(u.id);
-    const gcards = Object.keys(P_GAMES).filter(g=>pPool(P_GAMES[g].src, th).length>=P_GAMES[g].min).map(g=>{ const d=P_GAMES[g]; const st=m[s.lang+'|'+th+'|'+g]||0;
+    const gcards = Object.keys(P_GAMES).filter(g=>pGameOk(g, th)).map(g=>{ const d=P_GAMES[g]; const st=m[s.lang+'|'+th+'|'+g]||0;
       return `<div class="p-card" onclick="practiceStart('${g}',practiceState.themePick)"><div class="p-emoji">${d.ico}</div><div style="font-weight:700;margin-top:6px;">${d.name}</div><div style="font-size:13px;color:var(--muted);margin-top:4px;">${d.desc}</div><div style="margin-top:8px;font-size:18px;">${'⭐'.repeat(st)}${'☆'.repeat(3-st)}</div></div>`; }).join('');
     return `${style}${head("🧩 Mashq o'yinlari", langName+' — '+th+fire)}
       <div style="margin-bottom:12px;"><button class="btn outline sm" onclick="practiceState.themePick=null;renderMain();">← Mavzular</button></div>
