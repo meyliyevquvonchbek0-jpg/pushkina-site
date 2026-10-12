@@ -546,7 +546,7 @@ const FIELD_MAP = {
   ratings: {studentId:'student_id', teacherId:'teacher_id'},
   daily_totals: {teacherId:'teacher_id', totalTasks:'total_tasks', title:'title'},
   nazorat_scores: {sessionId:'session_id', studentId:'student_id', tasksDone:'tasks_done'},
-  settings: {telegramUrl:'telegram_url', instagramUrl:'instagram_url', aboutText:'about_text', telegramBotToken:'telegram_bot_token', adminTelegramChatId:'admin_telegram_chat_id', centerLat:'center_lat', centerLng:'center_lng', centerRadius:'center_radius'},
+  settings: {telegramUrl:'telegram_url', instagramUrl:'instagram_url', aboutText:'about_text', adminTelegramChatId:'admin_telegram_chat_id', centerLat:'center_lat', centerLng:'center_lng', centerRadius:'center_radius'},
   tests: {teacherId:'teacher_id', timeLimitMinutes:'time_limit_minutes', videoId:'video_id'},
   test_questions: {testId:'test_id', optionA:'option_a', optionB:'option_b', optionC:'option_c', optionD:'option_d', correctOption:'correct_option'},
   test_attempts: {testId:'test_id', studentId:'student_id', startedAt:'started_at', submittedAt:'submitted_at'},
@@ -639,7 +639,7 @@ let DB = {
   materials: [],    // {id, title, teacherId, url, date}
   announcements: [],// {id, title, text, date, authorId}
   ratings: [],      // {id, studentId, teacherId, date, score}
-  settings: {telegramUrl:'', instagramUrl:'', aboutText:'', telegramBotToken:'', adminTelegramChatId:'', centerLat:null, centerLng:null, centerRadius:150},
+  settings: {telegramUrl:'', instagramUrl:'', aboutText:'', adminTelegramChatId:'', centerLat:null, centerLng:null, centerRadius:150},
   tests: [],
   testQuestions: [],
   testAttempts: [],
@@ -4010,7 +4010,6 @@ async function sendBroadcast(){
   const status = document.getElementById('bc-status');
   err.textContent = '';
   if(!text){ err.textContent = 'Xabar matnini kiriting.'; return; }
-  if(!DB.settings.telegramBotToken){ err.textContent = 'Avval "Sozlamalar"da Telegram bot tokenini kiriting.'; return; }
   if(!confirm(`Bu xabar ${target==='all'?'BARCHA':target==='teachers'?'BARCHA O\'QITUVCHI':'BARCHA O\'QUVCHI'}larga yuboriladi. Davom etamizmi?`)) return;
 
   let recipients = [];
@@ -4110,13 +4109,12 @@ function renderStatsDashboard(){
 
 /* ============ TELEGRAM REMINDERS ============ */
 async function sendTelegramMessage(chatId, text){
-  const token = DB.settings.telegramBotToken;
-  if(!token || !chatId) return {ok:false};
+  if(!chatId) return {ok:false};
   try{
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const res = await fetch('/api/telegram', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({chat_id: chatId, text})
+      body: JSON.stringify({chat_id: String(chatId), text})
     });
     return await res.json();
   }catch(e){
@@ -4125,10 +4123,6 @@ async function sendTelegramMessage(chatId, text){
   }
 }
 function renderTelegramReminders(){
-  if(!DB.settings.telegramBotToken){
-    return `<div class="topbar"><div><h1>${t('Telegram eslatmalar')}</h1></div></div>
-      <div class="card"><div class="empty">Avval "Sozlamalar" bo'limida Telegram bot tokenini kiriting.</div></div>`;
-  }
   const today = todayStr();
   const in3Days = new Date();
   in3Days.setDate(in3Days.getDate()+3);
@@ -4225,8 +4219,7 @@ function renderSettings(){
     </div>
     <div class="card">
       <h3>Telegram bot (eslatmalar uchun)</h3>
-      <p style="font-size:13px;color:var(--text-dim);margin:-6px 0 14px;">Bu bot orqali o'quvchilarga to'lov eslatmalari yuboriladi. Token BotFather'dan olinadi.</p>
-      <label>Bot tokeni</label><input type="text" id="set-bot-token" value="${DB.settings.telegramBotToken||''}" placeholder="123456789:AAExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+      <p style="font-size:13px;color:var(--text-dim);margin:-6px 0 14px;">Bu bot orqali o'quvchilarga to'lov eslatmalari yuboriladi. Bot tokeni xavfsizlik uchun serverda (Railway) saqlanadi va bu yerda ko'rsatilmaydi.</p>
       <label>Admin Telegram Chat ID (yangi so'rovlar haqida xabar olish uchun)</label><input type="text" id="set-admin-chat" value="${DB.settings.adminTelegramChatId||''}" placeholder="masalan: 7507648227">
       <div class="err" id="set-bot-err"></div>
       <button class="btn gold sm" style="margin-top:10px;" onclick="saveBotToken()">Saqlash</button>
@@ -4311,12 +4304,10 @@ async function saveAboutText(){
   alert('Bosh sahifa matni saqlandi.');
 }
 async function saveBotToken(){
-  const telegramBotToken = document.getElementById('set-bot-token').value.trim();
   const adminTelegramChatId = document.getElementById('set-admin-chat').value.trim();
   const err = document.getElementById('set-bot-err');
   try{
-    await updateRow('settings', 1, {telegramBotToken, adminTelegramChatId});
-    DB.settings.telegramBotToken = telegramBotToken;
+    await updateRow('settings', 1, {adminTelegramChatId});
     DB.settings.adminTelegramChatId = adminTelegramChatId;
   }catch(e){
     err.textContent = 'Xatolik yuz berdi.'; console.error(e); return;

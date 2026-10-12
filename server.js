@@ -23,6 +23,49 @@ const SYSTEM_PROMPTS = {
   en: (level) => `You are a friendly conversation partner for English practice. Your partner's level is ${level} (CEFR scale). Speak ONLY in English, using vocabulary and grammar appropriate for ${level} level. Keep your responses short (2-3 sentences). Gently correct serious mistakes, but don't be overly critical. Be warm and encouraging.`
 };
 
+
+// ============ TELEGRAM (token faqat serverda) ============
+const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN || process.env.TOKEN || '';
+const SB_URL = process.env.SUPABASE_URL || 'https://nyyspriexqbulupofeoo.supabase.co';
+const SB_KEY = process.env.SUPABASE_KEY || 'sb_publishable_R0pt22Bd2HkLGkC9omlHTQ_Wg9A1ta2';
+let tgAllowed = { at: 0, ids: new Set() };
+async function loadAllowedChats(){
+  if (Date.now() - tgAllowed.at < 60000) return tgAllowed.ids;
+  const ids = new Set();
+  const get = async (path) => {
+    const r = await fetch(SB_URL + '/rest/v1/' + path, { headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY } });
+    return r.ok ? r.json() : [];
+  };
+  try {
+    (await get('students?select=telegram_chat_id')).forEach(x => x.telegram_chat_id && ids.add(String(x.telegram_chat_id)));
+    (await get('teachers?select=telegram_chat_id')).forEach(x => x.telegram_chat_id && ids.add(String(x.telegram_chat_id)));
+    (await get('settings?select=admin_telegram_chat_id')).forEach(x => x.admin_telegram_chat_id && ids.add(String(x.admin_telegram_chat_id)));
+    tgAllowed = { at: Date.now(), ids };
+  } catch (e) { console.error('allowed chats', e); }
+  return tgAllowed.ids;
+}
+const tgHits = new Map();
+app.post('/api/telegram', async (req, res) => {
+  if (!TG_TOKEN) return res.status(503).json({ ok: false, error: 'Bot token serverda sozlanmagan' });
+  const ip = req.headers['x-forwarded-for'] || req.ip || 'x';
+  const now = Date.now();
+  const arr = (tgHits.get(ip) || []).filter(t => now - t < 60000);
+  if (arr.length >= 120) return res.status(429).json({ ok: false, error: 'Juda ko\'p so\'rov' });
+  arr.push(now); tgHits.set(ip, arr);
+  const chatId = String((req.body && req.body.chat_id) || '');
+  const text = String((req.body && req.body.text) || '').slice(0, 3500);
+  if (!chatId || !text) return res.status(400).json({ ok: false });
+  const allowed = await loadAllowedChats();
+  if (!allowed.has(chatId)) return res.status(403).json({ ok: false, error: 'Ruxsat etilmagan chat' });
+  try {
+    const r = await fetch('https://api.telegram.org/bot' + TG_TOKEN + '/sendMessage', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text })
+    });
+    res.json(await r.json());
+  } catch (e) { console.error('telegram', e); res.status(502).json({ ok: false }); }
+});
+
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, history, language, level } = req.body || {};
