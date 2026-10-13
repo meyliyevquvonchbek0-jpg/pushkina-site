@@ -535,7 +535,7 @@ const FIELD_MAP = {
   practice_items: {},
   teacher_checkins: {teacherId:'teacher_id', distanceMeters:'distance_meters'},
   flashcard_sets: {teacherId:'teacher_id'},
-  students: {userId:'user_id', teacherId:'teacher_id', parentPhone:'parent_phone', telegramChatId:'telegram_chat_id', scheduleSlotId:'schedule_slot_id', onlineRequested:'online_requested', onlineApproved:'online_approved'},
+  students: {userId:'user_id', teacherId:'teacher_id', parentPhone:'parent_phone', telegramChatId:'telegram_chat_id', scheduleSlotId:'schedule_slot_id', onlineRequested:'online_requested', onlineApproved:'online_approved', extraTeacherIds:'extra_teacher_ids', extraSlotIds:'extra_slot_ids'},
   schedule: {teacherId:'teacher_id'},
   attendance: {studentId:'student_id', tasksDone:'tasks_done'},
   payments: {studentId:'student_id', paidUntil:'paid_until', installmentPart:'installment_part', installmentTotal:'installment_total', nextInstallmentAmount:'next_installment_amount'},
@@ -914,6 +914,30 @@ function showUpdateBanner(){
 checkForUpdate();
 setInterval(checkForUpdate, 45000);
 
+/* ============ BIR NECHTA O'QITUVCHI (extra_teacher_ids / extra_slot_ids) ============ */
+function _arr(v){ if(Array.isArray(v)) return v; if(typeof v==='string'){ try{ const a=JSON.parse(v); return Array.isArray(a)?a:[]; }catch(_){ return []; } } return []; }
+function sTeachers(s){ if(!s) return []; return [...new Set([s.teacherId].concat(_arr(s.extraTeacherIds)).filter(Boolean))]; }
+function hasT(s,id){ return !!id && sTeachers(s).includes(id); }
+function sSlotIds(s){ if(!s) return []; return [...new Set([s.scheduleSlotId].concat(_arr(s.extraSlotIds)).filter(Boolean))]; }
+function teacherNames(s){ const a=sTeachers(s); return a.length ? a.map(id=>teacherName(id)).join(', ') : '—'; }
+function extraBlockHtml(prefix, s, primaryId){
+  const xt = new Set(_arr(s&&s.extraTeacherIds)), xs = new Set(_arr(s&&s.extraSlotIds));
+  const tch = DB.teachers.map(t=>`<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin:4px 0;"><input type="checkbox" class="${prefix}-xt" value="${t.id}" ${xt.has(t.id)?'checked':''} style="width:auto;"> ${teacherName(t.id)}${t.subject?' — '+flt(t.subject):''}</label>`).join('');
+  const slots = DB.schedule.slice().sort((a,b)=>DAYS.indexOf(a.day)-DAYS.indexOf(b.day)||String(a.time).localeCompare(String(b.time))).map(sl=>`<option value="${sl.id}" ${xs.has(sl.id)?'selected':''}>${teacherName(sl.teacherId)} · ${sl.day} ${sl.time} · ${fl(sl.subject)}</option>`).join('');
+  return `<details style="margin:10px 0;" ${(xt.size||xs.size)?'open':''}><summary style="cursor:pointer;font-weight:600;">➕ Boshqa o'qituvchida ham o'qiydi (ixtiyoriy)</summary>
+    <div class="hint" style="margin:6px 0;">Asosiy o'qituvchidan tashqari yana kimlarda o'qiydi — belgilang. U o'quvchi ikkala o'qituvchining ro'yxatida chiqadi.</div>
+    <div style="max-height:140px;overflow:auto;border:1px solid var(--border,#ddd);border-radius:8px;padding:6px 10px;">${tch}</div>
+    <label style="margin-top:8px;">Qo'shimcha dars vaqtlari (Ctrl/Cmd bilan bir nechtasini tanlash)</label>
+    <select multiple size="5" id="${prefix}-xs">${slots}</select></details>`;
+}
+function readExtras(prefix, primaryId){
+  const ts = new Set([...document.querySelectorAll('.'+prefix+'-xt:checked')].map(x=>x.value));
+  const sel = document.getElementById(prefix+'-xs');
+  const slotIds = sel ? [...sel.selectedOptions].map(o=>o.value) : [];
+  slotIds.forEach(id=>{ const sl=DB.schedule.find(x=>x.id===id); if(sl&&sl.teacherId) ts.add(sl.teacherId); });
+  if(primaryId) ts.delete(primaryId);
+  return {extraTeacherIds:[...ts], extraSlotIds:slotIds};
+}
 /* ============ SELF-REGISTRATION (student requests) ============ */
 function openRegisterModal(){
   const teacherOpts = DB.teachers.map(t=>`<option value="${t.id}">${teacherName(t.id)}${t.subject?' — '+flt(t.subject):''}</option>`).join('');
@@ -927,6 +951,7 @@ function openRegisterModal(){
       <select id="reg-teacher" onchange="onTeacherSelectChange('reg-teacher','reg-schedule')"><option value="">— tanlang —</option>${teacherOpts}</select>
       <label>Dars vaqti</label>
       <select id="reg-schedule"><option value="">— avval o'qituvchini tanlang —</option></select>
+      ${extraBlockHtml('reg',null)}
       <label>Login (o'zingiz tanlang)</label><input type="text" id="reg-username">
       <label>Parol</label><input type="password" id="reg-password">
       <label>Telegram Chat ID (ixtiyoriy, eslatmalar uchun)</label><input type="text" id="reg-telegram" placeholder="masalan: 123456789">
@@ -961,7 +986,10 @@ async function submitRegistration(){
     newUser = await insertRow('users', {username, password, role:'student', name, phone:'', status:'pending'});
     let newStudent;
     try{
-      newStudent = await insertRow('students', {userId:newUser.id, group, teacherId, telegramChatId, scheduleSlotId, onlineRequested, onlineApproved:false});
+      const exR = readExtras('reg', teacherId);
+      const rowR = {userId:newUser.id, group, teacherId, telegramChatId, scheduleSlotId, onlineRequested, onlineApproved:false};
+      if(exR.extraTeacherIds.length||exR.extraSlotIds.length) Object.assign(rowR, exR);
+      newStudent = await insertRow('students', rowR);
     }catch(e1){
       // eski bazada online_requested / online_approved ustunlari bo'lmasligi mumkin — ularsiz qayta urinamiz
       console.warn('students insert (online ustunlari bilan) xato, ularsiz urinilmoqda', e1);
@@ -1024,19 +1052,19 @@ function renderRequests(){
   let pending = DB.users.filter(u=>u.role==='student' && u.status==='pending');
   const teachersWithRequests = DB.teachers.filter(tc=>pending.some(u=>{
     const s = DB.students.find(x=>x.userId===u.id);
-    return s && s.teacherId===tc.id;
+    return s && hasT(s,tc.id);
   }));
   if(requestsTeacherFilter){
     pending = pending.filter(u=>{
       const s = DB.students.find(x=>x.userId===u.id);
-      return s && s.teacherId===requestsTeacherFilter;
+      return s && hasT(s,requestsTeacherFilter);
     });
   }
   const rows = pending.map(u=>{
     const s = DB.students.find(x=>x.userId===u.id);
     return `<tr>
       <td>${u.name}</td>
-      <td>${s ? teacherName(s.teacherId) : '—'}</td>
+      <td>${s ? teacherNames(s) : '—'}</td>
       <td>${u.username}</td>
       <td>
         <button class="btn sm gold" onclick="approveRequest('${u.id}', this)">Tasdiqlash</button>
@@ -1501,7 +1529,7 @@ function renderFlashcards(u){
     sets = sets.filter(s=>s.teacherId===(t?t.id:null));
   }else if(u.role==='student'){
     const s = DB.students.find(x=>x.userId===u.id);
-    sets = sets.filter(x=>x.teacherId===(s?s.teacherId:null));
+    sets = sets.filter(x=>sTeachers(s).includes(x.teacherId));
   }
   const cards = sets.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(set=>{
     const cardCount = (set.cards||[]).length;
@@ -1954,7 +1982,7 @@ function renderHome(u){
   }
   if(u.role==='teacher'){
     const t = DB.teachers.find(x=>x.userId===u.id);
-    const myStudents = DB.students.filter(s=>s.teacherId===(t?t.id:null));
+    const myStudents = DB.students.filter(s=>hasT(s,t?t.id:null));
     const mySlots = DB.schedule.filter(s=>s.teacherId===(t?t.id:null));
     const earnings = t ? teacherEarnings(t.id, todayStr().slice(0,7)) : {total:0, share:0};
     return `
@@ -1998,7 +2026,7 @@ function goto_(tab){ activeTab = tab; persistTab(tab); renderNav(); renderMain()
 function renderTeachers(){
   const rows = DB.teachers.map(tc=>{
     const u = DB.users.find(x=>x.id===tc.userId) || {name:'—', username:''};
-    const myStudents = DB.students.filter(s=>s.teacherId===tc.id);
+    const myStudents = DB.students.filter(s=>hasT(s,tc.id));
     const activeCount = myStudents.filter(s=>!s.frozen).length;
     const frozenCount = myStudents.filter(s=>s.frozen).length;
     return `<tr>
@@ -2032,7 +2060,7 @@ function openTeacherStatsModal(teacherId){
   const tc = DB.teachers.find(x=>x.id===teacherId);
   if(!tc) return;
   const u = DB.users.find(x=>x.id===tc.userId);
-  const myStudents = DB.students.filter(s=>s.teacherId===teacherId);
+  const myStudents = DB.students.filter(s=>hasT(s,teacherId));
   const activeStudents = myStudents.filter(s=>!s.frozen);
   const frozenStudents = myStudents.filter(s=>s.frozen);
   const myStudentIds = myStudents.map(s=>s.id);
@@ -2179,7 +2207,7 @@ async function deleteTeacher(id){
 function renderTeacherInfo(){
   const cards = DB.teachers.map(t=>{
     const u = DB.users.find(x=>x.id===t.userId);
-    const studentCount = DB.students.filter(s=>s.teacherId===t.id).length;
+    const studentCount = DB.students.filter(s=>hasT(s,t.id)).length;
     const teacherVideos = DB.videos.filter(v=>v.teacherId===t.id);
     const videoGallery = teacherVideos.length ? `
       <div style="margin-top:12px;">
@@ -2246,7 +2274,7 @@ function renderStudents(){
       <td>${u.name}${s.frozen?' <span class="pill gray">❄️ Muzlatilgan</span>':''}${s.onlineApproved?' <span class="pill green">🖥️ Onlayn</span>':(s.onlineRequested?' <span class="pill rose">🖥️ So\'ragan</span>':'')}</td>
       <td>${s.group||'—'}</td>
       <td>${s.level||'—'}</td>
-      <td>${tu?tu.name:'—'}</td>
+      <td>${teacherNames(s)}</td>
       <td>${u.username}</td>
       <td>${s.parentPhone||'—'}</td>
       <td><span class="pill ${pay.ok?'green':'rose'}">${pay.label}</span></td>
@@ -2301,6 +2329,7 @@ function openStudentModal(){
       <select id="s-teacher" onchange="onTeacherSelectChange('s-teacher','s-schedule')"><option value="">— tanlang —</option>${teacherOptsHtml}</select>
       <label>Dars vaqti</label>
       <select id="s-schedule" onchange="onScheduleSelectChange('s-schedule','s-group')"><option value="">— avval o'qituvchini tanlang —</option></select>
+      ${extraBlockHtml('s',null)}
       <label>Guruh (avtomatik to'ldiriladi, xohlasangiz o'zgartiring)</label><input type="text" id="s-group" placeholder="masalan: A2-1">
       <label>Ota-ona/vasiy telefon raqami</label><input type="text" id="s-parent-phone" placeholder="+998...">
       <label>Daraja</label>
@@ -2345,13 +2374,16 @@ async function saveStudent(){
   let newUser = null;
   try{
     newUser = await insertRow('users', {username, password, role:'student', name, phone:''});
-    const newStudent = await insertRow('students', {userId:newUser.id, group, teacherId, parentPhone, level, telegramChatId, scheduleSlotId});
+    const ex = readExtras('s', teacherId);
+    const rowS = {userId:newUser.id, group, teacherId, parentPhone, level, telegramChatId, scheduleSlotId};
+    if(ex.extraTeacherIds.length||ex.extraSlotIds.length) Object.assign(rowS, ex);
+    const newStudent = await insertRow('students', rowS);
     DB.users.push(newUser);
     DB.students.push(newStudent);
   }catch(e){
     console.error(e);
     if(newUser){ try{ await deleteRow('users', newUser.id); }catch(_){ } }
-    err.textContent = 'Xatolik: ' + ((e && (e.message||e.details)) || 'noma\'lum') + ' (students_fix.sql kerak bo\'lishi mumkin).';
+    err.textContent = 'Xatolik: ' + ((e && (e.message||e.details)) || 'noma\'lum') + ' (students_fix.sql yoki students_multi_teacher.sql kerak bo\'lishi mumkin).';
     return;
   }
   document.querySelector('.modal-bg').remove();
@@ -2376,6 +2408,7 @@ function openStudentEditModal(studentId){
       <select id="se-teacher" onchange="onTeacherSelectChange('se-teacher','se-schedule')"><option value="">— tanlang —</option>${teacherOpts}</select>
       <label>Dars vaqti</label>
       <select id="se-schedule" onchange="onScheduleSelectChange('se-schedule','se-group')">${s.teacherId?scheduleOptionsForTeacher(s.teacherId, s.scheduleSlotId):'<option value="">— avval o\'qituvchini tanlang —</option>'}</select>
+      ${extraBlockHtml('se',s)}
       <label>Guruh (avtomatik to'ldiriladi, xohlasangiz o'zgartiring)</label><input type="text" id="se-group" value="${(s.group||'').replace(/"/g,'&quot;')}">
       <label>Daraja</label>
       <select id="se-level">
@@ -2448,9 +2481,13 @@ async function saveStudentEdit(studentId){
   const newPassword = document.getElementById('se-new-password').value.trim();
   const err = document.getElementById('se-err');
   try{
-    await updateRow('students', studentId, {group, teacherId, level, parentPhone, telegramChatId, scheduleSlotId});
+    const sOld = DB.students.find(x=>x.id===studentId);
+    const ex = readExtras('se', teacherId);
+    const upd = {group, teacherId, level, parentPhone, telegramChatId, scheduleSlotId};
+    if(ex.extraTeacherIds.length||ex.extraSlotIds.length||(sOld&&(_arr(sOld.extraTeacherIds).length||_arr(sOld.extraSlotIds).length))) Object.assign(upd, ex);
+    await updateRow('students', studentId, upd);
     const s = DB.students.find(x=>x.id===studentId);
-    if(s) Object.assign(s, {group, teacherId, level, parentPhone, telegramChatId, scheduleSlotId});
+    if(s) Object.assign(s, upd);
     if(newPassword && s){
       if(newPassword.length < 4){ err.textContent = 'Yangi parol kamida 4 belgidan iborat bo\'lsin.'; return; }
       await updateRow('users', s.userId, {password:newPassword});
@@ -2597,9 +2634,9 @@ async function sendAllTodayReminders(teacherIdFilter){
   let totalSent = 0;
   let slotsWithNoStudents = 0;
   for(const slot of todaySlots){
-    let targets = DB.students.filter(s=>s.teacherId===slot.teacherId && s.telegramChatId && s.scheduleSlotId===slot.id);
+    let targets = DB.students.filter(s=>hasT(s,slot.teacherId) && s.telegramChatId && sSlotIds(s).includes(slot.id));
     if(!targets.length){
-      targets = DB.students.filter(s=>s.teacherId===slot.teacherId && s.telegramChatId && s.group && slot.subject && s.group.trim().toLowerCase()===slot.subject.trim().toLowerCase());
+      targets = DB.students.filter(s=>hasT(s,slot.teacherId) && s.telegramChatId && s.group && slot.subject && s.group.trim().toLowerCase()===slot.subject.trim().toLowerCase());
     }
     if(!targets.length){ slotsWithNoStudents++; continue; }
     const text = `📚 Bugun sizda dars bor!\n\n🕒 Vaqt: ${slot.time}\n👥 Guruh: ${slot.subject}\n👨‍🏫 O'qituvchi: ${teacherName(slot.teacherId)}${slot.room?`\n🚪 Xona: ${slot.room}`:''}`;
@@ -2613,14 +2650,14 @@ async function sendAllTodayReminders(teacherIdFilter){
 async function sendLessonReminder(slotId){
   const slot = DB.schedule.find(x=>x.id===slotId);
   if(!slot) return;
-  let targets = DB.students.filter(s=>s.teacherId===slot.teacherId && s.telegramChatId && s.scheduleSlotId===slotId);
+  let targets = DB.students.filter(s=>hasT(s,slot.teacherId) && s.telegramChatId && sSlotIds(s).includes(slotId));
   let fallback = false;
   if(!targets.length){
-    targets = DB.students.filter(s=>s.teacherId===slot.teacherId && s.telegramChatId && s.group && slot.subject && s.group.trim().toLowerCase()===slot.subject.trim().toLowerCase());
+    targets = DB.students.filter(s=>hasT(s,slot.teacherId) && s.telegramChatId && s.group && slot.subject && s.group.trim().toLowerCase()===slot.subject.trim().toLowerCase());
     fallback = true;
   }
   if(!targets.length){
-    targets = DB.students.filter(s=>s.teacherId===slot.teacherId && s.telegramChatId);
+    targets = DB.students.filter(s=>hasT(s,slot.teacherId) && s.telegramChatId);
     fallback = true;
   }
   if(!targets.length){
@@ -2695,7 +2732,7 @@ function renderMySchedule(u){
     slots = DB.schedule.filter(s=>s.teacherId===myTeacherId);
   }else{
     const s = DB.students.find(x=>x.userId===u.id);
-    slots = DB.schedule.filter(x=>x.teacherId===(s?s.teacherId:null));
+    slots = DB.schedule.filter(x=>sTeachers(s).includes(x.teacherId));
   }
   slots = slots.slice().sort((a,b)=> DAYS.indexOf(a.day)-DAYS.indexOf(b.day) || a.time.localeCompare(b.time));
   const rows = slots.map(sl=>{
@@ -2744,7 +2781,7 @@ async function addMySlot(teacherId){
 /* ============ TEACHER: MY STUDENTS ============ */
 function renderMyStudents(u){
   const myT = DB.teachers.find(x=>x.userId===u.id);
-  const myStudents = DB.students.filter(s=>s.teacherId===(myT?myT.id:null));
+  const myStudents = DB.students.filter(s=>hasT(s,myT?myT.id:null));
   const rows = myStudents.map(s=>{
     const su = DB.users.find(x=>x.id===s.userId);
     const pay = getPaymentStatus(s.id);
@@ -2766,7 +2803,7 @@ function renderOtherGroups(u){
   const others = DB.teachers.filter(t=>t.id!==(myTeacher?myTeacher.id:null));
   const rows = others.map(t=>{
     const tu = DB.users.find(x=>x.id===t.userId);
-    const count = DB.students.filter(s=>s.teacherId===t.id).length;
+    const count = DB.students.filter(s=>hasT(s,t.id)).length;
     return `<tr><td>${tu?tu.name:'—'}</td><td>${fl(t.subject)}</td><td>${count} ta o'quvchi</td></tr>`;
   }).join('');
   return `
@@ -2863,7 +2900,7 @@ function showNazoratHistoryModal(attempts, studentName, title){
 function exportAllNazoratReport(teacherId){
   const sessions = DB.dailyTotals.filter(dt=>dt.teacherId===teacherId && dt.title && dt.title.trim());
   if(!sessions.length){ alert('Bu o\'qituvchida hali nazorat kiritilmagan.'); return; }
-  const pool = DB.students.filter(s=>s.teacherId===teacherId);
+  const pool = DB.students.filter(s=>hasT(s,teacherId));
   const rows = [];
   // Sarlavhalar bo'yicha guruhlab, sana bo'yicha saralaymiz
   const byTitle = {};
@@ -2960,7 +2997,7 @@ function renderAttendance(u){
   if(u.role==='teacher'){
     const t = DB.teachers.find(x=>x.userId===u.id);
     myTeacherId = t ? t.id : null;
-    pool = pool.filter(s=>s.teacherId===myTeacherId);
+    pool = pool.filter(s=>hasT(s,myTeacherId));
   }
   const relevantSlots = (u.role==='teacher')
     ? DB.schedule.filter(sl=>sl.teacherId===myTeacherId)
@@ -2974,7 +3011,7 @@ function renderAttendance(u){
       </div>
     </div>` : '';
   if(attendanceGroupFilter){
-    pool = pool.filter(s=>s.scheduleSlotId===attendanceGroupFilter);
+    pool = pool.filter(s=>sSlotIds(s).includes(attendanceGroupFilter));
   }
   const cells = buildCalendarGrid(attendanceCalendarMonth);
   const [cy,cm] = attendanceCalendarMonth.split('-');
@@ -3012,7 +3049,7 @@ function renderAttendance(u){
     ? renderNazoratBlock(myTeacherId, isEditable, '')
     : (u.role==='admin'
       ? (()=>{
-          const teacherIdsWithStudents = [...new Set(pool.map(s=>s.teacherId).filter(Boolean))];
+          const teacherIdsWithStudents = [...new Set(pool.flatMap(s=>sTeachers(s)))];
           if(!teacherIdsWithStudents.length) return '';
           return `<div class="card">
             <label style="margin-bottom:8px;display:block;">📋 O'qituvchilar bo'yicha kunlik nazorat</label>
@@ -3023,7 +3060,7 @@ function renderAttendance(u){
     const su = DB.users.find(x=>x.id===s.userId);
     const rec = DB.attendance.find(a=>a.studentId===s.id && a.date===selectedAttendanceDate);
     const present = rec ? rec.present : null;
-    const studentTeacherId = s.teacherId || myTeacherId;
+    const studentTeacherId = (myTeacherId && hasT(s,myTeacherId)) ? myTeacherId : (s.teacherId || myTeacherId);
     const dtRec = getActiveSessionForTeacherToday(studentTeacherId);
     const totalTasks = dtRec ? dtRec.totalTasks : null;
     const nazoratTitle = dtRec ? (dtRec.title||'') : '';
@@ -3061,7 +3098,7 @@ function renderAttendance(u){
       const su = DB.users.find(x=>x.id===s.userId);
       const rec = DB.attendance.find(a=>a.studentId===s.id && a.date===selectedAttendanceDate);
       if(!rec) return null;
-      const studentTeacherId = s.teacherId || myTeacherId;
+      const studentTeacherId = (myTeacherId && hasT(s,myTeacherId)) ? myTeacherId : (s.teacherId || myTeacherId);
       const dtRec = getActiveSessionForTeacherToday(studentTeacherId);
       const totalTasks = dtRec ? dtRec.totalTasks : null;
       const nazoratTitle = dtRec ? (dtRec.title||'') : '';
@@ -3212,7 +3249,7 @@ function exportDailyGradesCSV(teacherId){
   const dailyTotalRec = getActiveSessionForTeacherToday(teacherId);
   const totalTasks = dailyTotalRec ? dailyTotalRec.totalTasks : '';
   const nazoratTitle = dailyTotalRec ? (dailyTotalRec.title||'') : '';
-  const pool = DB.students.filter(s=>s.teacherId===teacherId);
+  const pool = DB.students.filter(s=>hasT(s,teacherId));
   // Faqat davomati belgilangan (Keldi yoki Kelmadi deb qayd etilgan) o'quvchilar chiqariladi
   const rows = pool
     .map(s=>{
@@ -3298,9 +3335,9 @@ function setPaymentsTeacherFilter(teacherId){
 function renderPayments(u){
   const isAdmin = u.role==='admin';
   const myTeacherId = !isAdmin ? (DB.teachers.find(t=>t.userId===u.id)||{}).id : null;
-  let pool = isAdmin ? DB.students : DB.students.filter(s=>s.teacherId===myTeacherId);
+  let pool = isAdmin ? DB.students : DB.students.filter(s=>hasT(s,myTeacherId));
   if(isAdmin && paymentsTeacherFilter){
-    pool = pool.filter(s=>s.teacherId===paymentsTeacherFilter);
+    pool = pool.filter(s=>hasT(s,paymentsTeacherFilter));
   }
   const teacherChips = isAdmin ? `
     <div class="card" style="margin-bottom:0;">
@@ -3320,7 +3357,7 @@ function renderPayments(u){
     return `<tr>
       <td>${su?su.name:'—'}</td>
       <td>${s.group||'—'}</td>
-      ${isAdmin?`<td>${teacherName(s.teacherId)}</td>`:''}
+      ${isAdmin?`<td>${teacherNames(s)}</td>`:''}
       <td><span class="pill ${pay.ok?'green':'rose'}">${pay.label}</span>${pay.pendingInstallment?`<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">⏳ ${pay.pendingInstallment}</div>`:''}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap;">
         ${payBtn}
@@ -3706,7 +3743,7 @@ function renderMaterials(u){
     list = DB.materials.filter(m=>m.teacherId===myTeacherId);
   }else if(u.role==='student'){
     const s = DB.students.find(x=>x.userId===u.id);
-    list = DB.materials.filter(m=>m.teacherId===(s?s.teacherId:null));
+    list = DB.materials.filter(m=>sTeachers(s).includes(m.teacherId));
   }else if(u.role==='admin' && materialsTeacherFilter){
     list = DB.materials.filter(m=>m.teacherId===materialsTeacherFilter);
   }
@@ -3815,7 +3852,7 @@ async function deleteMaterial(id){
 
 /* ============ SALARIES (teacher earnings — 50% share) ============ */
 function teacherEarnings(teacherId, monthPrefix){
-  const myStudentIds = DB.students.filter(s=>s.teacherId===teacherId).map(s=>s.id);
+  const myStudentIds = DB.students.filter(s=>hasT(s,teacherId)).map(s=>s.id);
   const totalStudents = myStudentIds.length;
   const presentToday = DB.attendance.filter(a=>myStudentIds.includes(a.studentId) && a.date===todayStr() && a.present).length;
   let relevantPayments;
@@ -3831,7 +3868,7 @@ function teacherEarnings(teacherId, monthPrefix){
   return {totalStudents, presentToday, paidCount:paidStudentIds.size, total, share: total*0.5};
 }
 function teacherAllTimeShare(teacherId){
-  const myStudentIds = DB.students.filter(s=>s.teacherId===teacherId).map(s=>s.id);
+  const myStudentIds = DB.students.filter(s=>hasT(s,teacherId)).map(s=>s.id);
   const total = DB.payments.filter(p=>myStudentIds.includes(p.studentId)).reduce((sum,p)=>sum+Number(p.amount||0), 0);
   return total*0.5;
 }
@@ -4118,7 +4155,7 @@ function renderStatsDashboard(){
   // O'qituvchi bo'yicha o'quvchilar soni
   const teacherCounts = DB.teachers.map(tc=>({
     name: teacherName(tc.id),
-    count: DB.students.filter(s=>s.teacherId===tc.id && !s.frozen).length
+    count: DB.students.filter(s=>hasT(s,tc.id) && !s.frozen).length
   })).sort((a,b)=>b.count-a.count);
   const maxTeacherCount = Math.max(...teacherCounts.map(t=>t.count), 1);
 
@@ -4565,7 +4602,7 @@ function exportAttendanceCSV(){
 function renderHomework(u){
   if(u.role==='student'){
     const s = DB.students.find(x=>x.userId===u.id);
-    const list = DB.homework.filter(h=>h.teacherId===(s?s.teacherId:null)).slice().sort((a,b)=>b.date.localeCompare(a.date));
+    const list = DB.homework.filter(h=>sTeachers(s).includes(h.teacherId)).slice().sort((a,b)=>b.date.localeCompare(a.date));
     const cards = list.map(h=>{
       const st = DB.homeworkStatus.find(x=>x.homeworkId===h.id && x.studentId===s.id);
       const done = st ? st.done : false;
@@ -4590,7 +4627,7 @@ function renderHomework(u){
   if(u.role==='teacher') list = DB.homework.filter(h=>h.teacherId===myTeacherId);
   list = list.slice().sort((a,b)=>b.date.localeCompare(a.date));
   const cards = list.map(h=>{
-    const myStudents = DB.students.filter(s=>s.teacherId===h.teacherId);
+    const myStudents = DB.students.filter(s=>hasT(s,h.teacherId));
     const isOverdue = h.dueDate && h.dueDate < todayStr();
     const rows = myStudents.map(s=>{
       const su = DB.users.find(x=>x.id===s.userId);
@@ -5005,7 +5042,7 @@ function attemptsOf(testId, studentId){
 }
 function renderStudentTests(u){
   const s = DB.students.find(x=>x.userId===u.id);
-  const list = DB.tests.filter(t=>t.teacherId===(s?s.teacherId:null));
+  const list = DB.tests.filter(t=>sTeachers(s).includes(t.teacherId));
   const rows = list.map(test=>{
     const maxAttempts = testMaxAttempts(test);
     const attempts = attemptsOf(test.id, s.id);
@@ -6207,7 +6244,7 @@ function renderLeaderboard(u){
   const rows = sorted.map((s,i)=>{
     const su = DB.users.find(x=>x.id===s.userId);
     let name;
-    if(u.role==='teacher' && s.teacherId!==myTeacherId) name = 'O\'quvchi (boshqa guruh)';
+    if(u.role==='teacher' && !hasT(s,myTeacherId)) name = 'O\'quvchi (boshqa guruh)';
     else name = su?su.name:'—';
     return `<tr><td>${i+1}</td><td>${name}</td><td>${s.coins||0} 🪙</td></tr>`;
   }).join('');
@@ -6388,16 +6425,17 @@ function renderMyReview(u){
     <td><span class="pill ${r.approved?'green':'gray'}">${r.approved?'Chop etilgan':'Ko\'rib chiqilmoqda'}</span></td>
   </tr>`).join('');
   const s = DB.students.find(x=>x.userId===u.id);
-  const myRating = s ? DB.teacherRatings.find(r=>r.studentId===s.id && r.teacherId===s.teacherId) : null;
-  const teacherRatingBlock = (s && s.teacherId) ? `
+  const teacherRatingBlock = (s && sTeachers(s).length) ? sTeachers(s).map(tid=>{
+    const myRating = DB.teacherRatings.find(r=>r.studentId===s.id && r.teacherId===tid);
+    return `
     <div class="card">
-      <h3>O'qituvchingizni baholang (anonim)</h3>
+      <h3>O'qituvchingizni baholang (anonim)${sTeachers(s).length>1?' — '+teacherName(tid):''}</h3>
       <p style="font-size:12.5px;color:var(--text-dim);margin:-6px 0 12px;">Bu baho o'qituvchiga emas, faqat administratsiyaga ko'rinadi. Ismingiz saqlanmaydi.</p>
       <div style="display:flex;gap:6px;">
-        ${[1,2,3,4,5].map(n=>`<button type="button" class="btn ${(myRating&&myRating.rating>=n)?'gold':'outline'}" onclick="rateTeacher('${s.id}','${s.teacherId}',${n})" style="padding:8px 14px;">${n}★</button>`).join('')}
+        ${[1,2,3,4,5].map(n=>`<button type="button" class="btn ${(myRating&&myRating.rating>=n)?'gold':'outline'}" onclick="rateTeacher('${s.id}','${tid}',${n})" style="padding:8px 14px;">${n}★</button>`).join('')}
       </div>
       ${myRating ? `<div class="hint">Joriy bahoyingiz: ${myRating.rating} ★ (o'zgartirish uchun boshqa songa bosing)</div>` : ''}
-    </div>` : '';
+    </div>`;}).join('') : '';
   return `
     <div class="topbar"><div><h1>${t('Sharh qoldirish')}</h1><p>Sharhingiz administratsiya tomonidan tekshirilgach, bosh sahifada chop etiladi</p></div></div>
     ${teacherRatingBlock}
@@ -6622,7 +6660,7 @@ function renderUsers(){
   };
   const teacherFilterName = usersTeacherFilter ? teacherName(usersTeacherFilter) : null;
   if(usersTeacherFilter){
-    const s = DB.students.filter(x=>x.teacherId===usersTeacherFilter).map(x=>x.userId);
+    const s = DB.students.filter(x=>hasT(x,usersTeacherFilter)).map(x=>x.userId);
     students = students.filter(u=>s.includes(u.id));
   }
   return `
