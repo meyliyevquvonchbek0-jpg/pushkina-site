@@ -533,10 +533,9 @@ const FIELD_MAP = {
   duel_sentences: {},
   teacher_payouts: {teacherId:'teacher_id'},
   practice_items: {},
-  schools: {createdAt:'created_at'},
   teacher_checkins: {teacherId:'teacher_id', distanceMeters:'distance_meters'},
   flashcard_sets: {teacherId:'teacher_id'},
-  students: {schoolId:'school_id', userId:'user_id', teacherId:'teacher_id', parentPhone:'parent_phone', telegramChatId:'telegram_chat_id', scheduleSlotId:'schedule_slot_id', onlineRequested:'online_requested', onlineApproved:'online_approved'},
+  students: {userId:'user_id', teacherId:'teacher_id', parentPhone:'parent_phone', telegramChatId:'telegram_chat_id', scheduleSlotId:'schedule_slot_id', onlineRequested:'online_requested', onlineApproved:'online_approved'},
   schedule: {teacherId:'teacher_id'},
   attendance: {studentId:'student_id', tasksDone:'tasks_done'},
   payments: {studentId:'student_id', paidUntil:'paid_until', installmentPart:'installment_part', installmentTotal:'installment_total', nextInstallmentAmount:'next_installment_amount'},
@@ -547,7 +546,7 @@ const FIELD_MAP = {
   daily_totals: {teacherId:'teacher_id', totalTasks:'total_tasks', title:'title'},
   nazorat_scores: {sessionId:'session_id', studentId:'student_id', tasksDone:'tasks_done'},
   settings: {telegramUrl:'telegram_url', instagramUrl:'instagram_url', aboutText:'about_text', adminTelegramChatId:'admin_telegram_chat_id', centerLat:'center_lat', centerLng:'center_lng', centerRadius:'center_radius'},
-  tests: {teacherId:'teacher_id', timeLimitMinutes:'time_limit_minutes', videoId:'video_id'},
+  tests: {maxAttempts:'max_attempts', teacherId:'teacher_id', timeLimitMinutes:'time_limit_minutes', videoId:'video_id'},
   test_questions: {testId:'test_id', optionA:'option_a', optionB:'option_b', optionC:'option_c', optionD:'option_d', correctOption:'correct_option'},
   test_attempts: {testId:'test_id', studentId:'student_id', startedAt:'started_at', submittedAt:'submitted_at'},
   homework: {teacherId:'teacher_id', dueDate:'due_date', videoId:'video_id'},
@@ -659,8 +658,7 @@ let DB = {
   duelWords: [],
   duelSentences: [],
   teacherPayouts: [],
-  practiceItems: [],
-  schools: []
+  practiceItems: []
 };
 let deferredInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', (e)=>{
@@ -821,7 +819,7 @@ async function boot(){
       users, teachers, students, schedule, attendance, payments, videos,
       materials, announcements, ratings, settingsRows, tests, testQuestions,
       testAttempts, homework, homeworkStatus, rewards, rewardRequests,
-      reviews, dailyTotals, nazoratScores, teacherCheckins, flashcardSets, teacherRatings, dailyWords, botQuestions, videoProgress, teacherPayouts, practiceItems, schools
+      reviews, dailyTotals, nazoratScores, teacherCheckins, flashcardSets, teacherRatings, dailyWords, botQuestions, videoProgress, teacherPayouts, practiceItems
     ] = await Promise.all([
       fetchTable('users_public'), fetchTable('teachers'), fetchTable('students'),
       fetchTable('schedule'), fetchTable('attendance'), fetchTable('payments'),
@@ -832,7 +830,7 @@ async function boot(){
       fetchTable('reviews'), fetchTable('daily_totals'), fetchTable('nazorat_scores'),
       fetchTable('teacher_checkins'), fetchTable('flashcard_sets'), fetchTable('teacher_ratings'),
       fetchTable('daily_words'), fetchTable('bot_questions'), fetchTable('video_progress'),
-      fetchTable('teacher_payouts'), fetchTable('practice_items'), fetchTable('schools')
+      fetchTable('teacher_payouts'), fetchTable('practice_items')
     ]);
     DB.users = users; DB.teachers = teachers; DB.students = students;
     DB.schedule = schedule; DB.attendance = attendance; DB.payments = payments;
@@ -850,7 +848,6 @@ async function boot(){
     DB.videoProgress = videoProgress;
     DB.teacherPayouts = teacherPayouts;
     DB.practiceItems = practiceItems;
-    DB.schools = schools || [];
     try{ renderSocialFloat(); }catch(e){ console.error('renderSocialFloat error', e); }
     try{ renderLandingContent(); }catch(e){ console.error('renderLandingContent error', e); }
     try{ renderLangSwitchers(); }catch(e){ console.error('renderLangSwitchers error', e); }
@@ -926,18 +923,14 @@ function openRegisterModal(){
     <div class="modal">
       <h3>O'quvchi sifatida ro'yxatdan o'tish</h3>
       <label>Ism familiya</label><input type="text" id="reg-name">
-      <label>Siz kimsiz?</label>
-      <select id="reg-kind" onchange="onRegKindChange()"><option value="center">Markaz o'quvchisiman</option>${(DB.schools||[]).length?'<option value="school">Maktab o\'quvchisiman</option>':''}</select>
-      <div id="reg-school-wrap" style="display:none;"><label>Maktabingiz</label>
-      <select id="reg-school">${(DB.schools||[]).map(sc=>`<option value="${sc.id}">${sc.name}</option>`).join('')}</select></div>
       <label>O'qituvchingiz</label>
       <select id="reg-teacher" onchange="onTeacherSelectChange('reg-teacher','reg-schedule')"><option value="">— tanlang —</option>${teacherOpts}</select>
-      <div id="reg-sched-wrap"><label>Dars vaqti</label>
-      <select id="reg-schedule"><option value="">— avval o'qituvchini tanlang —</option></select></div>
+      <label>Dars vaqti</label>
+      <select id="reg-schedule"><option value="">— avval o'qituvchini tanlang —</option></select>
       <label>Login (o'zingiz tanlang)</label><input type="text" id="reg-username">
       <label>Parol</label><input type="password" id="reg-password">
       <label>Telegram Chat ID (ixtiyoriy, eslatmalar uchun)</label><input type="text" id="reg-telegram" placeholder="masalan: 123456789">
-      <label id="reg-online-wrap" style="display:flex;align-items:center;gap:8px;font-weight:normal;margin-top:6px;">
+      <label style="display:flex;align-items:center;gap:8px;font-weight:normal;margin-top:6px;">
         <input type="checkbox" id="reg-online" style="width:auto;"> 🖥️ Onlayn darslarda qatnashmoqchiman
       </label>
       <div class="hint" style="margin-top:-4px;">Bu so'rov admin tomonidan alohida tasdiqlanadi.</div>
@@ -950,34 +943,24 @@ function openRegisterModal(){
     </div>`;
   document.body.appendChild(bg);
 }
-function onRegKindChange(){
-  const sch = document.getElementById('reg-kind').value==='school';
-  document.getElementById('reg-school-wrap').style.display = sch?'block':'none';
-  document.getElementById('reg-sched-wrap').style.display = sch?'none':'block';
-  document.getElementById('reg-online-wrap').style.display = sch?'none':'flex';
-}
 async function submitRegistration(){
   const name = document.getElementById('reg-name').value.trim();
   const teacherId = document.getElementById('reg-teacher').value;
-  const isSchool = document.getElementById('reg-kind').value==='school';
-  const schoolId = isSchool ? document.getElementById('reg-school').value : null;
-  const scheduleSlotId = isSchool ? null : (document.getElementById('reg-schedule').value || null);
+  const scheduleSlotId = document.getElementById('reg-schedule').value || null;
   const username = document.getElementById('reg-username').value.trim();
   const password = document.getElementById('reg-password').value;
   const telegramChatId = document.getElementById('reg-telegram').value.trim();
-  const onlineRequested = isSchool ? false : document.getElementById('reg-online').checked;
+  const onlineRequested = document.getElementById('reg-online').checked;
   const err = document.getElementById('reg-err');
   if(!name || !teacherId || !username || !password){ err.textContent = 'Barcha maydonlarni to\'ldiring.'; return; }
   if(DB.users.some(u=>u.username===username)){ err.textContent = 'Bu login band. Boshqasini tanlang.'; return; }
   const slot = scheduleSlotId ? DB.schedule.find(x=>x.id===scheduleSlotId) : null;
-  const group = isSchool ? schoolName(schoolId) : (slot ? slot.subject : '');
+  const group = slot ? slot.subject : '';
   let newUser = null;
   try{
     newUser = await insertRow('users', {username, password, role:'student', name, phone:'', status:'pending'});
     let newStudent;
-    if(isSchool){
-      newStudent = await insertRow('students', {userId:newUser.id, group, teacherId, telegramChatId, schoolId});
-    } else try{
+    try{
       newStudent = await insertRow('students', {userId:newUser.id, group, teacherId, telegramChatId, scheduleSlotId, onlineRequested, onlineApproved:false});
     }catch(e1){
       // eski bazada online_requested / online_approved ustunlari bo'lmasligi mumkin — ularsiz qayta urinamiz
@@ -996,7 +979,7 @@ async function submitRegistration(){
   document.querySelector('.modal-bg').remove();
   alert('So\'rovingiz yuborildi. Administrator tasdiqlagach, login va parolingiz bilan kira olasiz.');
   if(DB.settings.adminTelegramChatId){
-    sendTelegramMessage(DB.settings.adminTelegramChatId, `📩 Yangi ro'yxatdan o'tish so'rovi!\nIsm: ${name}\n${isSchool?'Maktab: '+schoolName(schoolId)+'\n':''}O'qituvchi: ${teacherName(teacherId)}\nLogin: ${username}\n\nSaytda "So'rovlar" bo'limida tasdiqlang.`);
+    sendTelegramMessage(DB.settings.adminTelegramChatId, `📩 Yangi ro'yxatdan o'tish so'rovi!\nIsm: ${name}\nO'qituvchi: ${teacherName(teacherId)}\nLogin: ${username}\n\nSaytda "So'rovlar" bo'limida tasdiqlang.`);
   }
 }
 async function approveRequest(userId, btn){
@@ -1280,6 +1263,63 @@ function handleLogout(){
   document.getElementById('login-password').value='';
 }
 function curUser(){ return DB.users.find(u=>u.id===session.userId); }
+
+/* ============ SAYTDA O'TKAZILGAN VAQT ============ */
+let _actAt = Date.now(), _pendingSec = 0, _flushing = false;
+['mousemove','keydown','click','touchstart','scroll'].forEach(ev=>window.addEventListener(ev, ()=>{ _actAt = Date.now(); }, {passive:true}));
+async function flushUsage(){
+  if(_flushing || _pendingSec<=0 || !session) return;
+  const sec = Math.min(_pendingSec, 600); _flushing = true;
+  try{
+    const {error} = await sb.rpc('add_usage', {p_user: String(session.userId), p_seconds: sec});
+    if(!error) _pendingSec -= sec;
+  }catch(e){}
+  _flushing = false;
+}
+setInterval(()=>{
+  if(!session) return;
+  if(document.visibilityState==='visible' && Date.now()-_actAt < 300000) _pendingSec += 15;
+  if(_pendingSec>=60) flushUsage();
+}, 15000);
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') flushUsage(); });
+window.addEventListener('pagehide', ()=>{ flushUsage(); });
+function fmtDur(sec){
+  sec = Math.round(sec||0); if(sec<60) return sec? sec+' s' : '—';
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60);
+  return h? h+' soat '+m+' daq' : m+' daq';
+}
+let usageData = null, usageFilter = 'all', usageSort = 'd7';
+async function loadUsage(){
+  const {data, error} = await sb.rpc('usage_summary');
+  usageData = error ? {error: error.message||'xato'} : {rows: data||[]};
+  if(activeTab==='usage') renderMain();
+}
+function renderUsage(){
+  if(!usageData){ loadUsage(); return `<div class="topbar"><div><h1>⏱️ Faollik</h1></div></div><div class="card"><div class="empty">Yuklanmoqda...</div></div>`; }
+  if(usageData.error) return `<div class="topbar"><div><h1>⏱️ Faollik</h1></div></div><div class="card"><div class="empty">Xato: ${usageData.error}<br>usage_time.sql ni Supabase da ishga tushiring.</div></div>`;
+  const map = {}; usageData.rows.forEach(r=>map[r.user_id]=r);
+  let users = DB.users.filter(u=>u.status!=='pending');
+  if(usageFilter!=='all') users = users.filter(u=>u.role===usageFilter);
+  const rows = users.map(u=>({u, r: map[String(u.id)]||{today:0,d7:0,d30:0,total:0,last_seen:null}}))
+    .sort((a,b)=>(b.r[usageSort]||0)-(a.r[usageSort]||0));
+  const roleLbl = {admin:'Admin', teacher:"O'qituvchi", student:"O'quvchi"};
+  const fbtn = (k,l)=>`<button class="btn sm ${usageFilter===k?'gold':'outline'}" onclick="usageFilter='${k}';renderMain()">${l}</button>`;
+  const sbtn = (k,l)=>`<button class="btn sm ${usageSort===k?'gold':'outline'}" onclick="usageSort='${k}';renderMain()">${l}</button>`;
+  const now = Date.now();
+  return `<div class="topbar"><div><h1>⏱️ Faollik</h1><p>Har bir foydalanuvchi saytda qancha vaqt faol bo'lgani (sahifa ochiq va harakat bor vaqt)</p></div><button class="btn outline" onclick="usageData=null;renderMain()">🔄 Yangilash</button></div>
+    <div class="card" style="margin-bottom:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+      ${fbtn('all','Hammasi')}${fbtn('student',"O'quvchilar")}${fbtn('teacher',"O'qituvchilar")}
+      <span style="margin-left:auto;font-size:12px;color:var(--text-dim);">Saralash:</span> ${sbtn('today','Bugun')}${sbtn('d7','7 kun')}${sbtn('d30','30 kun')}${sbtn('total','Jami')}
+    </div>
+    <div class="card"><div style="overflow-x:auto;"><table>
+      <thead><tr><th>Foydalanuvchi</th><th>Rol</th><th>Bugun</th><th>7 kun</th><th>30 kun</th><th>Jami</th><th>Oxirgi kirish</th></tr></thead>
+      <tbody>${rows.map(({u,r})=>{
+        const ls = r.last_seen ? new Date(r.last_seen) : null;
+        const online = ls && (now-ls.getTime())<180000;
+        return `<tr><td>${u.name}</td><td>${roleLbl[u.role]||u.role}</td><td>${fmtDur(r.today)}</td><td>${fmtDur(r.d7)}</td><td>${fmtDur(r.d30)}</td><td><b>${fmtDur(r.total)}</b></td><td>${online?'<span class="pill green">🟢 hozir</span>':(ls?ls.toLocaleString():'—')}</td></tr>`;
+      }).join('') || '<tr><td colspan="7" class="empty">Ma\'lumot yo\'q</td></tr>'}</tbody>
+    </table></div></div>`;
+}
 
 /* ============ FACE CHECK-IN (yuz + joylashuv orqali davomat) ============ */
 let faceModelsLoaded = false;
@@ -1694,6 +1734,7 @@ const NAV = {
     {id:'attendance', label:'Davomat', icon:'✓'},
     {id:'broadcast', label:'📢 Shoshilinch xabar', icon:'📢'},
     {id:'stats', label:'📊 Statistika', icon:'📊'},
+    {id:'usage', label:'⏱️ Faollik', icon:'⏱️'},
     {id:'bot-questions', label:'🤖 Bot savollari', icon:'🤖'},
     {id:'payments', label:'To\'lovlar', icon:'₪'},
     {id:'videos', label:'Video darslar', icon:'▶'},
@@ -1710,7 +1751,6 @@ const NAV = {
     {id:'telegram-reminders', label:'Telegram eslatmalar', icon:'✈'},
     {id:'live-class', label:'Onlayn darslar', icon:'●'},
     {id:'requests', label:'So\'rovlar', icon:'✉'},
-    {id:'schools', label:'🏫 Maktablar', icon:'🏫'},
     {id:'users', label:'Foydalanuvchilar', icon:'●'},
     {id:'settings', label:'Sozlamalar', icon:'⚙'},
     {id:'translator', label:'Tarjimon', icon:'🌐'}
@@ -1754,9 +1794,6 @@ const NAV = {
     {id:'translator', label:'Tarjimon', icon:'🌐'}
   ]
 };
-const SCHOOL_TABS = ['home','practice','duel','leaderboard'];
-function mySchoolId(u){ if(!u || u.role!=='student') return null; const s=DB.students.find(x=>x.userId===u.id); return (s && s.schoolId) || null; }
-function schoolName(id){ const sc=(DB.schools||[]).find(x=>x.id===id); return sc?sc.name:'Maktab'; }
 function renderNotifBell(){
   const slot = document.getElementById('notif-bell-slot');
   if(!slot || !session) return;
@@ -1787,8 +1824,7 @@ function renderNav(){
   renderNotifBell();
   const list = document.getElementById('nav-list');
   list.innerHTML = '';
-  const navList = mySchoolId(u) ? NAV.student.filter(i=>SCHOOL_TABS.includes(i.id)) : (u.role==='admin' ? NAV.admin : NAV[u.role]);
-  navList.forEach(item=>{
+  NAV[u.role].forEach(item=>{
     const div = document.createElement('div');
     div.className = 'nav-item' + (activeTab===item.id ? ' active' : '');
     div.innerHTML = `<span>${item.icon}</span><span>${t(item.label)}</span>`;
@@ -1805,7 +1841,6 @@ function renderMain(){
   const u = curUser();
   const el = document.getElementById('main-content');
   let html = '';
-  if(mySchoolId(u) && !SCHOOL_TABS.includes(activeTab)) activeTab = 'home';
   if(activeTab==='home') html = renderHome(u);
   else if(activeTab==='teachers') html = renderTeachers();
   else if(activeTab==='students') html = renderStudents();
@@ -1830,6 +1865,7 @@ function renderMain(){
   else if(activeTab==='teacher-checkins') html = renderTeacherCheckinsLog();
   else if(activeTab==='broadcast') html = renderBroadcast();
   else if(activeTab==='stats') html = renderStatsDashboard();
+  else if(activeTab==='usage') html = renderUsage();
   else if(activeTab==='bot-questions') html = renderBotQuestions();
   else if(activeTab==='flashcards') html = renderFlashcards(u);
   else if(activeTab==='teacher-info') html = renderTeacherInfo(u);
@@ -1841,7 +1877,6 @@ function renderMain(){
   else if(activeTab==='live-game') html = renderLiveGame(u);
   else if(activeTab==='duel') html = renderDuel(u);
   else if(activeTab==='practice') html = renderPractice(u);
-  else if(activeTab==='schools') html = renderSchools();
   else if(activeTab==='take-test') html = renderTakeTest(u);
   else if(activeTab==='leaderboard') html = renderLeaderboard(u);
   else if(activeTab==='rewards') html = renderRewards(u);
@@ -1890,21 +1925,7 @@ async function deleteAnnouncement(id){
 }
 
 /* ============ HOME ============ */
-function renderSchoolHome(u){
-  const s = DB.students.find(x=>x.userId===u.id);
-  return `<div class="topbar"><div><h1>Salom, ${u.name}!</h1><p>🏫 ${schoolName(s.schoolId)}</p></div></div>
-    <div class="grid cols-3">
-      <div class="metric"><div class="lbl">Coinlarim</div><div class="val gold">${s.coins||0} 🪙</div></div>
-    </div>
-    <div class="card" style="margin-top:16px;text-align:center;">
-      <div style="font-size:40px;">🧩</div>
-      <h3>Mashq o'yinlari</h3>
-      <p style="color:var(--muted);">Rus va ingliz tili: lug'at, grammatika, zamonlar</p>
-      <button class="btn gold" onclick="goto_('practice')">Boshlash</button>
-    </div>${dailyWordCardHtml()}`;
-}
 function renderHome(u){
-  if(mySchoolId(u)) return renderSchoolHome(u);
   if(u.role==='admin'){
     const totalStudents = DB.students.length;
     const totalTeachers = DB.teachers.length;
@@ -2222,7 +2243,7 @@ function renderStudents(){
     const tu = t ? DB.users.find(x=>x.id===t.userId) : null;
     const pay = getPaymentStatus(s.id);
     return `<tr ${s.frozen?'style="opacity:.55;"':''}>
-      <td>${u.name}${s.schoolId?' <span class="pill gray">🏫 '+schoolName(s.schoolId)+'</span>':''}${s.frozen?' <span class="pill gray">❄️ Muzlatilgan</span>':''}${s.onlineApproved?' <span class="pill green">🖥️ Onlayn</span>':(s.onlineRequested?' <span class="pill rose">🖥️ So\'ragan</span>':'')}</td>
+      <td>${u.name}${s.frozen?' <span class="pill gray">❄️ Muzlatilgan</span>':''}${s.onlineApproved?' <span class="pill green">🖥️ Onlayn</span>':(s.onlineRequested?' <span class="pill rose">🖥️ So\'ragan</span>':'')}</td>
       <td>${s.group||'—'}</td>
       <td>${s.level||'—'}</td>
       <td>${tu?tu.name:'—'}</td>
@@ -3256,7 +3277,6 @@ function renderMyRatings(u){
 /* ============ PAYMENTS ============ */
 function getPaymentStatus(studentId){
   if(!studentId) return {ok:false, label:'Ma\'lumot yo\'q'};
-  { const _s=DB.students.find(x=>x.id===studentId); if(_s && _s.schoolId) return {ok:true, label:'Maktab', school:true}; }
   const recs = DB.payments.filter(p=>p.studentId===studentId).sort((a,b)=>b.paidUntil.localeCompare(a.paidUntil));
   if(recs.length===0) return {ok:false, label:'To\'lov qilinmagan'};
   const last = recs[0];
@@ -3695,10 +3715,10 @@ function renderMaterials(u){
   const cards = list.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(m=>`
     <div class="video-card">
       <div class="vc-body">
-        <div class="vc-title">${m.title}</div>
-        <div class="vc-meta">${teacherName(m.teacherId)} · ${m.date}</div>
+        <div class="vc-title"><span style="font-size:22px;vertical-align:middle;margin-right:6px;">${materialKind(m.url)[0]}</span>${m.title}</div>
+        <div class="vc-meta">${materialKind(m.url)[1]} · ${teacherName(m.teacherId)} · ${m.date}</div>
         <div style="margin-top:10px;display:flex;gap:8px;">
-          <a href="${m.url}" target="_blank" rel="noopener" class="btn sm outline">Ochish</a>
+          <a href="${m.url}" target="_blank" rel="noopener" class="btn sm outline">${materialKind(m.url)[1]==='Havola'?'Ochish':'Ochish / yuklab olish'}</a>
           ${canDelete(m) ? `<button class="icon-btn rose" onclick="deleteMaterial('${m.id}')">O'chirish</button>` : ''}
         </div>
       </div>
@@ -3728,8 +3748,10 @@ function openMaterialModal(role){
       <h3>Yangi material</h3>
       <label>Sarlavha</label><input type="text" id="m-title" placeholder="masalan: A2 — grammatika qo'llanmasi">
       ${role==='admin' ? `<label>O'qituvchi</label><select id="m-teacher"><option value="">— tanlang —</option>${teacherOptsHtml}</select>` : ''}
-      <label>Havola (Google Drive, PDF yoki boshqa hujjat linki)</label>
-      <input type="text" id="m-url" placeholder="https://drive.google.com/...">
+      <label>Fayl yuklash (PDF, Word, PowerPoint, Excel, rasm, audio, ZIP — 50 MB gacha)</label>
+      <input type="file" id="m-file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.gif,.webp,.mp3,.m4a,.wav,.mp4,.zip,.rar">
+      <label>Yoki havola (ixtiyoriy — fayl yuklamasangiz)</label>
+      <input type="text" id="m-url" placeholder="https://...">
       <div class="err" id="m-err"></div>
       <div class="modal-actions">
         <button class="btn outline" onclick="this.closest('.modal-bg').remove()">Bekor qilish</button>
@@ -3738,9 +3760,18 @@ function openMaterialModal(role){
     </div>`;
   document.body.appendChild(bg);
 }
+function materialKind(url){
+  const ext = ((url||'').split('?')[0].split('.').pop()||'').toLowerCase();
+  const map = {pdf:['📕','PDF'],doc:['📘','Word'],docx:['📘','Word'],ppt:['📙','PowerPoint'],pptx:['📙','PowerPoint'],xls:['📗','Excel'],xlsx:['📗','Excel'],
+    png:['🖼️','Rasm'],jpg:['🖼️','Rasm'],jpeg:['🖼️','Rasm'],gif:['🖼️','Rasm'],webp:['🖼️','Rasm'],mp3:['🎧','Audio'],m4a:['🎧','Audio'],wav:['🎧','Audio'],mp4:['🎬','Video'],zip:['🗜️','ZIP'],rar:['🗜️','ZIP'],txt:['📄','Matn']};
+  if(map[ext] && /supabase\.co\/storage/.test(url||'')) return map[ext];
+  if(map[ext]) return map[ext];
+  return ['🔗','Havola'];
+}
 async function saveMaterial(role){
   const title = document.getElementById('m-title').value.trim();
   const url = document.getElementById('m-url').value.trim();
+  const file = document.getElementById('m-file').files[0];
   const err = document.getElementById('m-err');
   let teacherId;
   if(role==='admin'){
@@ -3751,11 +3782,30 @@ async function saveMaterial(role){
     const t = DB.teachers.find(x=>x.userId===u.id);
     teacherId = t ? t.id : null;
   }
-  if(!title || !url){ err.textContent = 'Sarlavha va havolani kiriting.'; return; }
-  const newMat = await insertRow('materials', {title, teacherId, url, date:todayStr()});
-  DB.materials.push(newMat);
-  document.querySelector('.modal-bg').remove();
-  renderMain();
+  if(!title || (!url && !file)){ err.textContent = 'Sarlavhani kiriting va fayl yuklang (yoki havola kiriting).'; return; }
+  if(file && file.size > 50*1024*1024){ err.textContent = 'Fayl 50 MB dan katta. Kichikroq fayl yuklang.'; return; }
+  const btn = document.querySelector('.modal-bg .btn.gold');
+  let finalUrl = url;
+  try{
+    if(file){
+      if(btn){ btn.disabled = true; btn.textContent = 'Yuklanmoqda...'; }
+      err.textContent = '';
+      const ext = (file.name.split('.').pop()||'bin').toLowerCase().replace(/[^a-z0-9]/g,'');
+      const path = `${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+      const {error: upErr} = await sb.storage.from('materials').upload(path, file, {contentType: file.type || undefined});
+      if(upErr) throw upErr;
+      finalUrl = sb.storage.from('materials').getPublicUrl(path).data.publicUrl;
+    }
+    const newMat = await insertRow('materials', {title, teacherId, url: finalUrl, date:todayStr()});
+    DB.materials.push(newMat);
+    document.querySelector('.modal-bg').remove();
+    renderMain();
+  }catch(e){
+    console.error(e);
+    const msg = (e && (e.message||e.error||e.details)) || "noma'lum xato";
+    err.textContent = 'Saqlanmadi: '+msg+(/bucket|not found/i.test(msg)?" — Supabase da materials_storage.sql ni ishga tushiring.":'');
+    if(btn){ btn.disabled = false; btn.textContent = 'Saqlash'; }
+  }
 }
 async function deleteMaterial(id){
   await deleteRow('materials', id);
@@ -4021,10 +4071,10 @@ async function sendBroadcast(){
   }
   recipients = [...new Set(recipients)];
   status.textContent = `Yuborilmoqda... (0/${recipients.length})`;
-  let sent = 0, failed = 0;
+  let sent = 0, failed = 0; const reasons = {};
   for(const chatId of recipients){
     const res = await sendTelegramMessage(chatId, `📢 ${text}`);
-    if(res && res.ok) sent++; else failed++;
+    if(res && res.ok) sent++; else { failed++; const why=(res&&(res.description||res.error))||'noma\'lum'; reasons[why]=(reasons[why]||0)+1; }
     status.textContent = `Yuborilmoqda... (${sent+failed}/${recipients.length})`;
     await new Promise(r=>setTimeout(r, 40));
   }
@@ -4035,6 +4085,7 @@ async function sendBroadcast(){
     }catch(e){ console.error(e); }
   }
   status.textContent = `✅ Yuborildi: ${sent} ta. ${failed?`❌ Xato: ${failed} ta.`:''}`;
+  if(failed){ status.innerHTML += '<div style="font-size:12px;color:var(--muted);margin-top:6px;">Sabablari: '+Object.entries(reasons).map(([k,v])=>v+' ta — '+String(k).replace(/</g,'&lt;')).join('; ')+'</div>'; }
   document.getElementById('bc-text').value = '';
 }
 
@@ -4646,7 +4697,7 @@ function renderTests(u){
     const qCount = DB.testQuestions.filter(q=>q.testId===test.id).length;
     const attemptCount = DB.testAttempts.filter(a=>a.testId===test.id).length;
     return `<tr>
-      <td>${test.title}</td><td>${fl(test.subject)}</td><td>${test.timeLimitMinutes} daq</td><td>${qCount} ta</td><td>${attemptCount} ta</td>
+      <td>${test.title}</td><td>${fl(test.subject)}</td><td>${test.timeLimitMinutes} daq<div style="font-size:11px;color:var(--text-dim);">${testAttemptsLabel(test)} urinish</div></td><td>${qCount} ta</td><td>${attemptCount} ta urinish</td>
       <td>
         <button class="btn sm outline" onclick="openTestQuestionsModal('${test.id}')">Savollar</button>
         <button class="btn sm outline" onclick="openTestResultsModal('${test.id}')">Natijalar</button>
@@ -4679,6 +4730,7 @@ function openTestModal(role, myTeacherId){
       <label>Sarlavha</label><input type="text" id="tst-title" placeholder="masalan: 1-oy nazorat testi">
       <label>Fan</label><input type="text" id="tst-subject" placeholder="Rus tili A2">
       <label>Vaqt chegarasi (daqiqa)</label><input type="number" id="tst-time" value="10" min="1">
+      <label>O'quvchi necha marta ishlay oladi? (0 = cheksiz)</label><input type="number" id="tst-attempts" value="3" min="0" max="50">
       ${role==='admin' ? `<label>O'qituvchi</label><select id="tst-teacher"><option value="">— tanlang —</option>${teacherOptsHtml}</select>` : ''}
       <label>Video darsga bog'lash (ixtiyoriy — onlayn o'quvchilarga videoning ostida ko'rinadi)</label>
       <select id="tst-video"><option value="">— bog'lanmasin —</option>${videoOptsHtml}</select>
@@ -4695,14 +4747,36 @@ async function saveTest(role, myTeacherId){
   const subject = document.getElementById('tst-subject').value.trim();
   const timeLimitMinutes = Number(document.getElementById('tst-time').value)||10;
   const videoId = document.getElementById('tst-video').value || null;
+  const maxAttempts = Math.max(0, parseInt(document.getElementById('tst-attempts').value,10) || 0);
   const err = document.getElementById('tst-err');
   let teacherId = myTeacherId;
   if(role==='admin'){ teacherId = document.getElementById('tst-teacher').value; if(!teacherId){ err.textContent = 'O\'qituvchini tanlang.'; return; } }
   if(!title){ err.textContent = 'Sarlavhani kiriting.'; return; }
-  const newTest = await insertRow('tests', {teacherId, title, subject, timeLimitMinutes, videoId, date:todayStr()});
-  DB.tests.push(newTest);
-  document.querySelector('.modal-bg').remove();
-  renderMain();
+  if(!teacherId){ err.textContent = "O'qituvchi aniqlanmadi. Qayta kiring yoki o'qituvchini tanlang."; return; }
+  err.textContent = 'Saqlanmoqda...';
+  try{
+    let newTest, payload = {teacherId, title, subject, timeLimitMinutes, videoId, maxAttempts, date:todayStr()}, dropped = [];
+    for(let i=0;i<4;i++){
+      try{ newTest = await insertRow('tests', payload); break; }
+      catch(e1){
+        const m = String((e1&&(e1.message||e1.details))||'');
+        // bazada yo'q ustunni (masalan max_attempts / video_id) olib tashlab qayta urinamiz
+        const col = (m.match(/'(\w+)' column/)||m.match(/column "?(\w+)"?/)||[])[1];
+        const key = col==='max_attempts' ? 'maxAttempts' : col==='video_id' ? 'videoId' : null;
+        if(key && key in payload){ delete payload[key]; dropped.push(col); continue; }
+        throw e1;
+      }
+    }
+    if(!newTest) throw new Error("Test yaratilmadi");
+    if(dropped.length) alert("Test yaratildi, lekin bazada "+dropped.join(', ')+" ustuni yo'q, shuning uchun bu sozlama saqlanmadi. Supabase da tests_attempts.sql (va students_fix.sql) ni ishga tushiring.");
+    DB.tests.push(newTest);
+    document.querySelector('.modal-bg').remove();
+    renderMain();
+  }catch(e){
+    console.error(e);
+    const msg = (e && (e.message||e.details)) || "noma'lum xato";
+    err.textContent = 'Test saqlanmadi: '+msg+(/video_id|column/i.test(msg)?' — Supabase da students_fix.sql (tests.video_id ustuni) ishga tushirilmagan bo\'lishi mumkin.':'');
+  }
 }
 async function deleteTest(id){
   if(!confirm('Bu testni o\'chirmoqchimisiz? Barcha savollar va natijalar ham o\'chadi.')) return;
@@ -4730,8 +4804,10 @@ function openTestQuestionsModal(testId){
       <div style="border-top:1px solid var(--border);padding-top:14px;margin-bottom:14px;">
         <label>Word fayldan savollarni avtomatik yuklash</label>
         <input type="file" id="tq-docx" accept=".docx">
-        <div class="hint">Har bir savolni raqam bilan boshlang (masalan "1."), keyin 4 ta variantni har birini alohida qatorga yozing — <b>birinchi variant har doim to'g'ri javob</b> bo'lsin. Savollar orasida bo'sh qator qoldiring. Tizim variantlarni avtomatik aralashtirib qo'yadi.</div>
-        <button class="btn outline sm" style="margin-top:8px;" onclick="importQuestionsFromDocx('${testId}')">📄 Fayldan yuklash</button>
+        <div class="hint">Har bir savolni raqam bilan boshlang (masalan "1."), keyin 4 ta variantni har birini alohida qatorga yozing — <b>birinchi variant har doim to'g'ri javob</b> bo'lsin. Variantlar oldida A) B) C) D) harflari bo'lsa ham bo'ladi. Tizim variantlarni avtomatik aralashtirib qo'yadi.</div>
+        <label style="margin-top:10px;">Yoki savollarni shu yerga joylashtiring (Word dan nusxalab)</label>
+        <textarea id="tq-paste" rows="5" placeholder="1. Savol matni&#10;To'g'ri javob&#10;Xato 1&#10;Xato 2&#10;Xato 3"></textarea>
+        <button class="btn outline sm" style="margin-top:8px;" onclick="importQuestionsFromDocx('${testId}')">📄 Yuklash (fayl yoki matn)</button>
         <div class="err" id="tq-docx-err"></div>
       </div>
       <div style="border-top:1px solid var(--border);padding-top:14px;">
@@ -4759,61 +4835,69 @@ function shuffleArray(arr){
   }
   return a;
 }
+function parseQuestionsText(text){
+  const lines = text.split(/\r?\n/).map(l=>l.replace(/ /g,' ').trim()).filter(l=>l.length>0);
+  const qStart = /^(\d+)\s*[\.\)\-:]\s*(.*)$/;
+  let blocks = [], cur = null, lastNum = 0;
+  for(const line of lines){
+    const m = line.match(qStart);
+    if(m && Number(m[1])===lastNum+1 && m[2].trim()){
+      if(cur) blocks.push(cur);
+      cur = {question:m[2].trim(), options:[]}; lastNum = Number(m[1]);
+    } else if(cur){ cur.options.push(line); }
+  }
+  if(cur) blocks.push(cur);
+  // Word avtomatik raqamlash raqamlarni yo'qotadi: har 5 qator = savol + 4 variant
+  if(blocks.filter(b=>b.options.length>=4).length===0 && lines.length>=5 && lines.length%5===0){
+    blocks = [];
+    for(let i=0;i<lines.length;i+=5) blocks.push({question:lines[i], options:lines.slice(i+1,i+5)});
+  }
+  const letters = /^[A-Da-dА-Гa-г][\)\.\:]\s*/;
+  return blocks.map(b=>{
+    let opts = b.options.slice();
+    // 4 ta variant ham "A) B) C) D)" bilan boshlansa, harflarni olib tashlaymiz
+    if(opts.length>=4 && opts.slice(0,4).every(o=>letters.test(o))) opts = opts.map(o=>o.replace(letters,'').trim());
+    return {question:b.question, options:opts};
+  });
+}
 async function importQuestionsFromDocx(testId){
   const fileInput = document.getElementById('tq-docx');
+  const pasted = (document.getElementById('tq-paste')||{}).value || '';
   const err = document.getElementById('tq-docx-err');
   const file = fileInput.files[0];
-  if(!file){ err.textContent = 'Avval faylni tanlang.'; return; }
-  err.textContent = 'Fayl o\'qilmoqda...';
+  if(!file && !pasted.trim()){ err.textContent = 'Faylni tanlang yoki matnni pastdagi maydonga joylashtiring.'; return; }
+  err.textContent = "O'qilmoqda...";
   try{
-    const arrayBuffer = await file.arrayBuffer();
-    const result = await mammoth.extractRawText({arrayBuffer});
-    const text = result.value;
-    const lines = text.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
-    const questionStart = /^\d+[\.\)]\s*(.*)/;
-    const blocks = [];
-    let current = null;
-    for(const line of lines){
-      const m = line.match(questionStart);
-      if(m){
-        if(current) blocks.push(current);
-        current = {question: m[1].trim(), options: []};
-      }else if(current){
-        current.options.push(line);
-      }
+    let text = pasted;
+    if(file){
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({arrayBuffer});
+      text = result.value;
     }
-    if(current) blocks.push(current);
-
+    const blocks = parseQuestionsText(text);
     const valid = blocks.filter(b=>b.question && b.options.length>=4);
+    const skipped = blocks.length - valid.length;
     if(valid.length===0){
-      err.textContent = 'Hech qanday savol topilmadi. Formatni tekshiring (har savol raqam bilan boshlansin, keyin 4 ta variant).';
+      err.textContent = "Hech qanday savol topilmadi (topilgan bloklar: "+blocks.length+"). Har savol 1., 2., 3. ... bilan boshlansin va keyin 4 ta variant (har biri alohida qatorda) bo'lsin.";
       return;
     }
-    let addedCount = 0;
+    let addedCount = 0, lastErr = '';
     for(const b of valid){
       const rawOptions = b.options.slice(0,4);
-      const correctText = rawOptions[0];
       const indices = shuffleArray([0,1,2,3]);
       const shuffledOptions = indices.map(i=>rawOptions[i]);
-      const correctIndex = indices.indexOf(0);
-      const correctLetter = ['a','b','c','d'][correctIndex];
-      const newQ = await insertRow('test_questions', {
-        testId,
-        question: b.question,
-        optionA: shuffledOptions[0],
-        optionB: shuffledOptions[1],
-        optionC: shuffledOptions[2],
-        optionD: shuffledOptions[3],
-        correctOption: correctLetter
-      });
-      DB.testQuestions.push(newQ);
-      addedCount++;
+      const correctLetter = ['a','b','c','d'][indices.indexOf(0)];
+      try{
+        const newQ = await insertRow('test_questions', {testId, question:b.question, optionA:shuffledOptions[0], optionB:shuffledOptions[1], optionC:shuffledOptions[2], optionD:shuffledOptions[3], correctOption:correctLetter});
+        DB.testQuestions.push(newQ); addedCount++;
+      }catch(e){ console.error(e); lastErr = (e&&(e.message||e.details))||"noma'lum xato"; break; }
     }
+    if(lastErr && addedCount===0){ err.textContent = 'Saqlanmadi: '+lastErr; return; }
     document.querySelector('.modal-bg').remove();
     openTestQuestionsModal(testId);
-    alert(`${addedCount} ta savol muvaffaqiyatli qo'shildi.`);
+    alert(`${addedCount} ta savol qo'shildi.`+(skipped?` ${skipped} ta blok o'tkazib yuborildi (4 tadan kam variant).`:'')+(lastErr?` Xato: ${lastErr}`:''));
   }catch(e){
-    err.textContent = 'Faylni o\'qib bo\'lmadi. .docx formatida ekanligiga ishonch hosil qiling.';
+    err.textContent = "Faylni o'qib bo'lmadi: "+((e&&e.message)||'')+" (.docx formatida bo'lsin)";
     console.error(e);
   }
 }
@@ -4826,35 +4910,48 @@ async function addTestQuestion(testId){
   const correctOption = document.getElementById('tq-correct').value;
   const err = document.getElementById('tq-err');
   if(!question || !optionA || !optionB || !optionC || !optionD){ err.textContent = 'Barcha maydonlarni to\'ldiring.'; return; }
-  const newQ = await insertRow('test_questions', {testId, question, optionA, optionB, optionC, optionD, correctOption});
-  DB.testQuestions.push(newQ);
-  document.querySelector('.modal-bg').remove();
-  openTestQuestionsModal(testId);
+  try{
+    const newQ = await insertRow('test_questions', {testId, question, optionA, optionB, optionC, optionD, correctOption});
+    DB.testQuestions.push(newQ);
+    document.querySelector('.modal-bg').remove();
+    openTestQuestionsModal(testId);
+  }catch(e){ console.error(e); err.textContent = 'Savol saqlanmadi: '+((e&&(e.message||e.details))||"noma'lum xato"); }
 }
 async function deleteTestQuestion(id, testId){
-  await deleteRow('test_questions', id);
+  try{ await deleteRow('test_questions', id); }catch(e){ console.error(e); alert('Xatolik: '+((e&&e.message)||'')); return; }
   DB.testQuestions = DB.testQuestions.filter(x=>x.id!==id);
   document.querySelector('.modal-bg').remove();
   openTestQuestionsModal(testId);
 }
 function openTestResultsModal(testId){
   const test = DB.tests.find(x=>x.id===testId);
-  const attempts = DB.testAttempts.filter(a=>a.testId===testId).slice().sort((a,b)=>b.submittedAt.localeCompare(a.submittedAt));
-  const rows = attempts.map(a=>{
-    const s = DB.students.find(x=>x.id===a.studentId);
+  const all = DB.testAttempts.filter(a=>a.testId===testId);
+  const studentIds = [...new Set(all.map(a=>a.studentId))];
+  const fmt = a=> new Date(a.submittedAt).toLocaleString();
+  const people = studentIds.map(sid=>{
+    const s = DB.students.find(x=>x.id===sid);
     const su = s ? DB.users.find(x=>x.id===s.userId) : null;
-    return `<tr><td>${su?su.name:'—'}</td><td>${a.score}/${a.total}</td><td>${new Date(a.submittedAt).toLocaleString()}</td>
-      <td><button class="btn sm outline" onclick="openAttemptDetailModal('${a.id}')">Batafsil</button></td></tr>`;
-  }).join('');
+    const list = attemptsOf(testId, sid);
+    return {name: su?su.name:'—', list, first:list[0], last:list[list.length-1], best:list.slice().sort((a,b)=>b.score-a.score)[0]};
+  }).sort((a,b)=>a.name.localeCompare(b.name));
+  const rows = people.map(pp=>`<tr>
+      <td>${pp.name}</td>
+      <td style="text-align:center;"><b>${pp.list.length}</b></td>
+      <td>${pp.first.score}/${pp.first.total}<div style="font-size:11px;color:var(--text-dim);">${fmt(pp.first)}</div></td>
+      <td>${pp.last.score}/${pp.last.total}<div style="font-size:11px;color:var(--text-dim);">${fmt(pp.last)}</div></td>
+      <td>${pp.best.score}/${pp.best.total}</td>
+      <td style="font-size:12px;">${pp.list.map((a,i)=>`<a href="#" onclick="openAttemptDetailModal('${a.id}');return false;" style="margin-right:6px;white-space:nowrap;">${i+1}) ${a.score}/${a.total}</a>`).join('')}</td>
+    </tr>`).join('');
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.innerHTML = `
-    <div class="modal">
+    <div class="modal" style="max-width:820px;">
       <h3>Natijalar — ${test?test.title:''}</h3>
-      <table>
-        <thead><tr><th>O'quvchi</th><th>Ball</th><th>Vaqt</th><th></th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="4" class="empty">Hali hech kim topshirmagan</td></tr>'}</tbody>
-      </table>
+      <p style="font-size:13px;color:var(--text-dim);margin:-4px 0 10px;">Ishlaganlar: ${people.length} ta o'quvchi · jami urinishlar: ${all.length} · ruxsat etilgan urinish: ${test?testAttemptsLabel(test):''}</p>
+      <div style="overflow-x:auto;"><table>
+        <thead><tr><th>O'quvchi</th><th>Urinish</th><th>Birinchi</th><th>Oxirgi</th><th>Eng yaxshi</th><th>Barcha urinishlar</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6" class="empty">Hali hech kim topshirmagan</td></tr>'}</tbody>
+      </table></div>
       <div class="modal-actions">
         <button class="btn outline" onclick="this.closest('.modal-bg').remove()">Yopish</button>
       </div>
@@ -4897,22 +4994,37 @@ function openAttemptDetailModal(attemptId){
     </div>`;
   document.body.appendChild(bg);
 }
+function testMaxAttempts(test){
+  const n = test && test.maxAttempts;
+  if(n===null || n===undefined) return 3;
+  return Number(n)===0 ? Infinity : Number(n);
+}
+function testAttemptsLabel(test){ const m=testMaxAttempts(test); return m===Infinity?'cheksiz':m; }
+function attemptsOf(testId, studentId){
+  return DB.testAttempts.filter(a=>a.testId===testId && a.studentId===studentId).sort((a,b)=>String(a.submittedAt).localeCompare(String(b.submittedAt)));
+}
 function renderStudentTests(u){
   const s = DB.students.find(x=>x.userId===u.id);
   const list = DB.tests.filter(t=>t.teacherId===(s?s.teacherId:null));
   const rows = list.map(test=>{
-    const maxAttempts = test.videoId ? 3 : 1;
-    const attempts = DB.testAttempts.filter(a=>a.testId===test.id && a.studentId===s.id).sort((a,b)=>b.score-a.score);
-    const best = attempts[0];
+    const maxAttempts = testMaxAttempts(test);
+    const attempts = attemptsOf(test.id, s.id);
+    const first = attempts[0], last = attempts[attempts.length-1];
+    const best = attempts.slice().sort((a,b)=>b.score-a.score)[0];
     const qCount = DB.testQuestions.filter(q=>q.testId===test.id).length;
-    const attemptsLeft = maxAttempts - attempts.length;
+    const attemptsLeft = maxAttempts===Infinity ? Infinity : maxAttempts - attempts.length;
+    const leftTxt = attemptsLeft===Infinity ? '' : ' ('+attemptsLeft+' qoldi)';
     const videoLocked = test.videoId && !((DB.videoProgress.find(x=>x.studentId===s.id && x.videoId===test.videoId)||{}).completed);
+    const summary = attempts.length ? `<div style="font-size:12.5px;line-height:1.7;">
+        Birinchi: <b>${first.score}/${first.total}</b> · Oxirgi: <b>${last.score}/${last.total}</b> · <span class="pill ${best.score===best.total?'green':'gray'}">Eng yaxshi: ${best.score}/${best.total}</span><br>
+        <span style="color:var(--text-dim);">Urinishlar: ${attempts.length}/${testAttemptsLabel(test)}</span>
+        <button class="btn sm outline" onclick="openAttemptDetailModal('${last.id}')">Oxirgi natija</button></div>`
+      : (qCount>0 ? `<span style="font-size:11.5px;color:var(--text-dim);">0/${testAttemptsLabel(test)} urinish</span>` : '<span class="pill gray">Savollar yo\'q</span>');
     return `<tr>
       <td>${test.title}${test.videoId?' <span class="pill gray" style="font-size:10px;">🎬 videoga bog\'langan</span>':''}</td><td>${fl(test.subject)}</td><td>${test.timeLimitMinutes} daq</td><td>${qCount} ta savol</td>
-      <td>${best
-        ? `<span class="pill ${best.score===best.total?'green':'gray'}">Eng yaxshi: ${best.score}/${best.total}</span> <span style="font-size:11.5px;color:var(--text-dim);">(${attempts.length}/${maxAttempts} urinish)</span> <button class="btn sm outline" onclick="openAttemptDetailModal('${best.id}')">Batafsil</button>`
-        : (qCount>0 ? `<span style="font-size:11.5px;color:var(--text-dim);">0/${maxAttempts} urinish</span>` : '<span class="pill gray">Savollar yo\'q</span>')}
-        ${(qCount>0 && attemptsLeft>0 && !videoLocked) ? `<button class="btn sm gold" onclick="startTest('${test.id}')" style="margin-left:6px;">${attempts.length>0?'Qayta urinish':'Boshlash'} (${attemptsLeft} qoldi)</button>` : ''}
+      <td>${summary}
+        ${(qCount>0 && attemptsLeft>0 && !videoLocked) ? `<button class="btn sm gold" onclick="startTest('${test.id}')" style="margin-top:6px;">${attempts.length>0?'Qayta urinish':'Boshlash'}${leftTxt}</button>` : ''}
+        ${(qCount>0 && attemptsLeft<=0) ? `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Urinishlar tugadi</div>` : ''}
         ${videoLocked ? `<span style="font-size:11px;color:var(--rose);margin-left:6px;">🔒 Avval videoni ko'ring</span>` : ''}
       </td>
     </tr>`;
@@ -4930,13 +5042,13 @@ function startTest(testId){
   const u = curUser();
   const s = DB.students.find(x=>x.userId===u.id);
   const test = DB.tests.find(x=>x.id===testId);
-  const maxAttempts = test && test.videoId ? 3 : 1;
+  const maxAttempts = testMaxAttempts(test);
   if(test && test.videoId){
     const vp = DB.videoProgress.find(x=>x.studentId===s.id && x.videoId===test.videoId);
     if(!vp || !vp.completed){ alert("Avval videoni oxirigacha tomosha qiling."); return; }
   }
   const attempts = DB.testAttempts.filter(a=>a.testId===testId && a.studentId===s.id);
-  if(attempts.length>=maxAttempts){ alert(maxAttempts===1 ? 'Siz bu testni allaqachon topshirgansiz.' : 'Siz bu testda 3 marta urinib bo\'lgansiz. Eng yaxshi natijangiz saqlanadi.'); return; }
+  if(attempts.length>=maxAttempts){ alert(maxAttempts===1 ? 'Siz bu testni allaqachon topshirgansiz.' : 'Siz bu testda '+maxAttempts+' marta urinib bo\'lgansiz.'); return; }
   currentTestId = testId;
   currentAnswers = {};
   testStartTime = Date.now();
@@ -5332,11 +5444,11 @@ function setupDuelPresenceAndInvites(){
   const presCh = sb.channel('online-students', {config:{presence:{key:s.id}}});
   presCh.on('presence', {event:'sync'}, ()=>{
     const state = presCh.presenceState();
-    duelState.onlineStudents = Object.keys(state).map(k=>state[k][0]).filter(p=>p.studentId!==s.id && (p.schoolId||null)===(s.schoolId||null));
+    duelState.onlineStudents = Object.keys(state).map(k=>state[k][0]).filter(p=>p.studentId!==s.id);
     if(activeTab==='duel') renderMain();
   });
   presCh.subscribe(async (status)=>{
-    if(status==='SUBSCRIBED'){ await presCh.track({studentId:s.id, studentName:u.name, schoolId:s.schoolId||null}); }
+    if(status==='SUBSCRIBED'){ await presCh.track({studentId:s.id, studentName:u.name}); }
   });
   globalDuelChannels.presence = presCh;
 
@@ -6091,8 +6203,7 @@ function renderDuelActive(u){
 function renderLeaderboard(u){
   let myTeacherId = null;
   if(u.role==='teacher'){ const t = DB.teachers.find(x=>x.userId===u.id); myTeacherId = t?t.id:null; }
-  const mySch = mySchoolId(u);
-  const sorted = DB.students.filter(s=> mySch ? s.schoolId===mySch : !s.schoolId).sort((a,b)=>(b.coins||0)-(a.coins||0)).slice(0,30);
+  const sorted = DB.students.slice().sort((a,b)=>(b.coins||0)-(a.coins||0)).slice(0,30);
   const rows = sorted.map((s,i)=>{
     const su = DB.users.find(x=>x.id===s.userId);
     let name;
@@ -6101,7 +6212,7 @@ function renderLeaderboard(u){
     return `<tr><td>${i+1}</td><td>${name}</td><td>${s.coins||0} 🪙</td></tr>`;
   }).join('');
   return `
-    <div class="topbar"><div><h1>${t('Reyting')}</h1><p>${mySch?'🏫 '+schoolName(mySch)+' — eng ko\'p coin to\'plaganlar':'Eng ko\'p coin to\'plagan o\'quvchilar'}</p></div></div>
+    <div class="topbar"><div><h1>${t('Reyting')}</h1><p>Eng ko'p coin to'plagan o'quvchilar</p></div></div>
     <div class="card">
       <table>
         <thead><tr><th>#</th><th>Ism</th><th>Coin</th></tr></thead>
@@ -6494,26 +6605,6 @@ let usersTeacherFilter = null;
 function setUsersTeacherFilter(teacherId){
   usersTeacherFilter = teacherId || null;
   renderMain();
-}
-function renderSchools(){
-  const rows = (DB.schools||[]).map(sc=>{
-    const list = DB.students.filter(s=>s.schoolId===sc.id);
-    const names = list.slice(0,6).map(s=>{ const u=DB.users.find(x=>x.id===s.userId); return u?u.name:''; }).filter(Boolean).join(', ');
-    return `<tr><td><b>${sc.name}</b></td><td>${list.length}</td><td style="font-size:13px;color:var(--muted);">${names||'—'}${list.length>6?' …':''}</td><td><button class="icon-btn rose" onclick="deleteSchool('${sc.id}')">O'chirish</button></td></tr>`;
-  }).join('');
-  return `<div class="topbar"><div><h1>🏫 Maktablar</h1><p>Hamkor maktab o'quvchilari faqat mashq o'yinlari, bellashuv, kunning so'zi va reytingni ko'radi</p></div></div>
-    <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;"><input type="text" id="new-school-name" placeholder="Maktab nomi (masalan: Invest xususiy maktabi)" style="flex:1;min-width:220px;"><button class="btn gold" onclick="addSchool()">Qo'shish</button></div></div>
-    <div class="card" style="margin-top:16px;"><table><thead><tr><th>Maktab</th><th>O'quvchilar</th><th>Ro'yxat</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="4" class="empty">Hali maktab qo\'shilmagan</td></tr>'}</tbody></table></div>`;
-}
-async function addSchool(){
-  const name = document.getElementById('new-school-name').value.trim(); if(!name) return;
-  try{ const r = await insertRow('schools',{name}); DB.schools.push(r); renderMain(); }
-  catch(e){ console.error(e); alert("Xatolik: "+((e&&e.message)||'')+" — schools_migration.sql ishga tushirilganmi?"); }
-}
-async function deleteSchool(id){
-  if(DB.students.some(s=>s.schoolId===id)){ alert("Bu maktabda o'quvchilar bor. Avval ularni o'chiring."); return; }
-  if(!confirm("Maktabni o'chirasizmi?")) return;
-  try{ await deleteRow('schools', id); DB.schools = DB.schools.filter(x=>x.id!==id); renderMain(); }catch(e){ console.error(e); alert('Xatolik'); }
 }
 function renderUsers(){
   const admins = DB.users.filter(u=>u.role==='admin');
