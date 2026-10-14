@@ -424,6 +424,32 @@
   .wh-q .tag{display:inline-block;margin:12px 0 4px;padding:3px 12px;border-radius:20px;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,.14);}
   .wh-q .hint{opacity:.8;font-size:15px;margin-top:6px;}
   .wh-q .text{font-family:Georgia,serif;font-size:clamp(28px,4.2vw,46px);line-height:1.2;margin:10px 0 4px;word-break:break-word;}
+
+  .gh-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;margin-top:14px;}
+  .gh-card{display:flex;gap:14px;align-items:center;padding:18px;border-radius:16px;background:var(--card);border:1px solid var(--border);border-left:5px solid var(--gc);cursor:pointer;transition:transform .15s,box-shadow .15s;}
+  .gh-card:hover{transform:translateY(-3px);box-shadow:0 8px 22px rgba(0,0,0,.12);}
+  .gh-ico{font-size:34px;line-height:1;}
+  .gh-t{font-weight:700;font-size:16px;}
+  .gh-d{font-size:13px;color:var(--text-dim);margin-top:2px;}
+  .gh-x{display:inline-block;margin-top:6px;font-size:11px;padding:2px 8px;border-radius:99px;background:var(--bg);color:var(--text-dim);}
+  .gh-goal{margin-bottom:6px;}
+  .gh-bar{height:10px;border-radius:99px;background:var(--border);overflow:hidden;margin-top:10px;}
+  .gh-bar>div{height:100%;background:linear-gradient(90deg,#C9A227,#E8C547);border-radius:99px;transition:width .4s;}
+  .vc-wrap{max-width:640px;margin:0 auto;}
+  .vc-card{margin-top:14px;min-height:260px;border-radius:20px;background:var(--card);border:1px solid var(--border);box-shadow:0 8px 28px rgba(0,0,0,.08);padding:30px 22px;text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;}
+  .vc-front{font-size:clamp(26px,5vw,40px);font-weight:700;word-break:break-word;}
+  .vc-hint{font-size:13px;color:var(--text-dim);}
+  .vc-line{width:60%;height:2px;background:var(--border);margin:10px 0;}
+  .vc-back{font-size:clamp(24px,4.5vw,36px);font-weight:700;color:var(--green);word-break:break-word;animation:whPop .3s ease-out;}
+  .vc-meta{font-size:11.5px;color:var(--text-dim);margin-top:10px;}
+  .vc-btns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:14px;}
+  .vc-btns .btn{padding:15px 6px;font-size:15px;}
+  .vc-speak{border:none;background:var(--bg);border-radius:50%;width:34px;height:34px;font-size:17px;cursor:pointer;vertical-align:middle;}
+  .wh-teams{display:flex;gap:8px;margin-top:12px;}
+  .wh-teams>div{flex:1;text-align:center;padding:8px 4px;border-radius:12px;background:var(--card);border:2px solid var(--border);}
+  .wh-teams>div.turn{border-color:#C9A227;box-shadow:0 0 0 3px rgba(201,162,39,.25);}
+  .wh-teams span{display:block;font-size:12px;}
+  .wh-teams b{font-size:24px;}
   .wh-ans{margin-top:14px;padding:16px;border-radius:14px;background:var(--green-bg);color:var(--green);text-align:center;font-size:clamp(22px,3vw,34px);font-weight:700;animation:whPop .35s ease-out;word-break:break-word;}
   .wh-ans small{display:block;font-size:12px;letter-spacing:1px;text-transform:uppercase;opacity:.8;margin-bottom:4px;}
   .wh-empty{padding:34px 18px;text-align:center;color:var(--text-dim);border:2px dashed var(--border);border-radius:16px;}
@@ -584,6 +610,8 @@ const FIELD_MAP = {
   teacher_ratings: {teacherId:'teacher_id', studentId:'student_id'},
   daily_words: {},
   wheel_questions: {topicOrder:'topic_order'},
+  vocab_progress: {studentId:'student_id', cardId:'card_id', lastDate:'last_date'},
+  vocab_daily: {studentId:'student_id'},
   leads: {telegramUsername:'telegram_username', telegramId:'telegram_id', createdAt:'created_at'},
   bot_questions: {teacherMessageId:'teacher_message_id', teacherChatId:'teacher_chat_id', studentChatId:'student_chat_id', studentName:'student_name', createdAt:'created_at'},
   video_progress: {studentId:'student_id', videoId:'video_id', maxWatchedSeconds:'max_watched_seconds'},
@@ -694,6 +722,7 @@ function renderSocialFloat(){
       <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="20" height="20" rx="5.5" stroke="white" stroke-width="2"/><circle cx="12" cy="12" r="4.5" stroke="white" stroke-width="2"/><circle cx="17.5" cy="6.5" r="1.3" fill="white"/></svg>
     </a>`;
   }
+  if(GAME_TABS.includes(activeTab) && activeTab!=='games' && !(activeTab==='wheel' && wheelState.big)) html = `<div style="margin-bottom:12px;"><button class="btn sm outline" onclick="gamesBack()">← O'yinlar</button></div>` + html;
   el.innerHTML = html;
 }
 
@@ -889,7 +918,7 @@ const DAYS = ['Dush','Sesh','Chor','Pay','Jum','Shan','Yak'];
 const WHEEL_LEVELS = ['A1','A2','B1','B2','C1'];
 const WHEEL_DIRS = {'ru-uz':"Ruscha → O'zbekcha", 'uz-ru':"O'zbekcha → Ruscha", 'grammar':'Grammatika'};
 const WHEEL_COLORS = ['#1B2540','#C9A227','#2A7F8E','#C1524B','#3B7A57','#6A4C93'];
-let wheelState = {big:false, level:'all', topics:[], dir:'all', round:[], used:[], rot:0, spinning:false, current:null, showAnswer:false, ok:0, bad:0, sound:true, manage:false, mLevel:'A1', built:false};
+let wheelState = {big:false, level:'all', topics:[], dir:'all', round:[], used:[], rot:0, spinning:false, current:null, showAnswer:false, ok:0, bad:0, sound:true, manage:false, mLevel:'A1', built:false, teamCount:0, teamScores:[0,0,0,0], turn:0};
 function wEsc(x){ return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function wheelPool(){
   return DB.wheelQuestions.filter(q=>(wheelState.level==='all' || q.level===wheelState.level) && (wheelState.dir==='all' || q.direction===wheelState.dir) && (!wheelState.topics.length || wheelState.topics.includes(q.topic)));
@@ -898,7 +927,7 @@ function wheelNewRound(){
   const pool = wheelPool().slice();
   for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
   wheelState.round = pool.slice(0,30);
-  wheelState.used = []; wheelState.current = null; wheelState.showAnswer = false; wheelState.ok = 0; wheelState.bad = 0;
+  wheelState.teamScores=[0,0,0,0]; wheelState.turn=0; wheelState.used = []; wheelState.current = null; wheelState.showAnswer = false; wheelState.ok = 0; wheelState.bad = 0;
   wheelState.built = true;
 }
 function wheelSegPath(i,n,r){
@@ -960,7 +989,9 @@ function renderWheel(u){
             <button class="btn sm gold" onclick="wheelBig(true)">🖥 Katta ekran</button>
             <button class="btn sm outline" onclick="wheelToggleSound()">${wheelState.sound?'🔊 Ovoz yoqilgan':'🔇 Ovoz o\'chiq'}</button>
           </div>
+          <div style="font-size:12.5px;color:var(--text-dim);">Jamoa o'yini</div><div class="wh-chips">${[0,2,3,4].map(k=>`<button class="wh-chip ${wheelState.teamCount===k?'on':''}" onclick="wheelSetTeams(${k})">${k?k+' jamoa':'Yakka'}</button>`).join('')}</div>
           ${n?`<div class="wh-grid-num">${wheelState.round.map((_,i)=>`<span class="${wheelState.used.includes(i)?'u':''}">${i+1}</span>`).join('')}</div>`:''}
+          ${wheelTeamBoard()}
           <div class="wh-score"><div style="background:var(--green-bg);color:var(--green);">✓ To'g'ri: ${wheelState.ok}</div><div style="background:var(--rose-bg);color:var(--rose);">✗ Xato: ${wheelState.bad}</div></div>
         </div>
         <div id="wh-result" style="margin-top:16px;">${wheelResultHtml()}</div>
@@ -985,7 +1016,7 @@ function renderWheelBig(){
     <div class="wh-big-grid">
       <div class="wh-big-left"><div class="wh-board">${wheelPointerSvg()}<div id="wh-svg-wrap">${wheelSvg()}</div></div>
         <button class="wh-spin-btn" id="wh-spin" onclick="wheelSpin()" ${wheelState.spinning||wheelState.used.length>=n?'disabled':''}>${wheelState.used.length>=n?'RAUND TUGADI':'🎡 AYLANTIRISH'}</button></div>
-      <div class="wh-big-right"><div id="wh-result">${wheelResultHtml()}</div></div>
+      <div class="wh-big-right">${wheelTeamBoard()}<div id="wh-result">${wheelResultHtml()}</div></div>
     </div></div>`;
 }
 function wheelBig(on){
@@ -1006,9 +1037,9 @@ function wheelResultHtml(){
   return `<div class="wh-q"><span class="num">${idx+1}</span><br>
       <span class="tag">${wEsc(WHEEL_DIRS[q.direction]||'Savol')}</span>
       <div class="hint">${wEsc(instr)}</div>
-      <div class="text">${wEsc(q.question)}</div></div>
+      <div class="text">${wEsc(q.question)} ${vSpeakBtn(q.question)}</div></div>
     ${wheelState.showAnswer
-      ? `<div class="wh-ans"><small>To'g'ri javob</small>${wEsc(q.answer)}</div>
+      ? `<div class="wh-ans"><small>To'g'ri javob</small>${wEsc(q.answer)} ${vSpeakBtn(q.answer)}</div>
          <div style="display:flex;gap:10px;margin-top:12px;"><button class="btn gold" style="flex:1;" onclick="wheelMark(true)">✓ To'g'ri javob berdi</button><button class="btn danger" style="flex:1;" onclick="wheelMark(false)">✗ Xato / bilmadi</button></div>`
       : `<button class="btn gold" style="width:100%;margin-top:12px;padding:13px;font-size:16px;" onclick="wheelReveal()">👁 Javobni ko'rsatish</button>`}`;
 }
@@ -1052,7 +1083,14 @@ function wheelSetLevel(l){ wheelState.level=l; wheelNewRound(); renderMain(); }
 function wheelSetDir(d){ wheelState.dir=d; wheelNewRound(); renderMain(); }
 function wheelRestart(){ if(wheelState.spinning) return; wheelNewRound(); renderMain(); }
 function wheelReveal(){ wheelState.showAnswer=true; document.getElementById('wh-result').innerHTML = wheelResultHtml(); }
+function wheelSetTeams(n){ wheelState.teamCount=n; wheelState.teamScores=[0,0,0,0]; wheelState.turn=0; renderMain(); }
+const WH_TEAM_NAMES=['🔴 Qizil','🔵 Ko\'k','🟢 Yashil','🟡 Sariq'];
+function wheelTeamBoard(){
+  const n=wheelState.teamCount; if(!n) return '';
+  return `<div class="wh-teams">${Array.from({length:n},(_,i)=>`<div class="${wheelState.turn===i?'turn':''}"><span>${WH_TEAM_NAMES[i]}</span><b>${wheelState.teamScores[i]}</b></div>`).join('')}</div><div style="text-align:center;font-weight:700;margin:6px 0;">Navbat: ${WH_TEAM_NAMES[wheelState.turn]}</div>`;
+}
 function wheelMark(ok){
+  if(wheelState.teamCount){ if(ok) wheelState.teamScores[wheelState.turn]++; wheelState.turn=(wheelState.turn+1)%wheelState.teamCount; }
   if(ok){ wheelState.ok++; wheelConfetti(); wheelSound('win'); } else { wheelState.bad++; wheelSound('bad'); }
   wheelState.current = null; wheelState.showAnswer = false; renderMain();
 }
@@ -1167,6 +1205,271 @@ async function wheelDelete(id){
   if(!confirm('Bu savolni o\'chirmoqchimisiz?')) return;
   try{ await deleteRow('wheel_questions', id); DB.wheelQuestions = DB.wheelQuestions.filter(q=>q.id!==id); wheelNewRound(); renderMain(); }
   catch(e){ console.error(e); alert('Xatolik yuz berdi.'); }
+}
+
+/* ============ O'YINLAR BO'LIMI (hub) + SO'Z YODLASH ============ */
+const GAME_TABS = ['games','live-game','wheel','practice','duel','review','cards','hard'];
+DB.vocabProgress = []; DB.vocabDaily = [];
+let vocabLoaded = false, vocabLoading = false, vocabWarned = false;
+const V_INT = [0,1,3,7,14,30];
+let vocabState = {mode:'due', topics:null, newCount:10, queue:[], idx:0, flipped:false, ok:0, hard:0, bad:0, started:false, finished:false};
+let _vq = Promise.resolve();
+function vQueue(fn){ _vq = _vq.then(fn).catch(vocabWarn); return _vq; }
+function vocabWarn(e){
+  console.error('vocab', e);
+  const msg = String((e && (e.message||e.details||e.code)) || '');
+  if(!vocabWarned && /relation|schema cache|does not exist|PGRST205|42P01|column/i.test(msg)){
+    vocabWarned = true; alert("So'z yodlash jadvallari topilmadi. Supabase'da vocab_system.sql ni ishga tushiring.");
+  }
+}
+function vocabStudent(){ const u = curUser(); return (u && u.role==='student') ? (DB.students.find(x=>x.userId===u.id)||null) : null; }
+function vAddDays(str, n){ const d = new Date(str+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); }
+function vIsCyr(t){ return /[А-Яа-яЁё]/.test(t||''); }
+function vSpeakEl(el){
+  try{
+    const t = el.getAttribute('data-t'); if(!t || !('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'ru-RU'; u.rate = 0.85; window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+function vSpeakBtn(text){ return vIsCyr(text) ? `<button type="button" class="vc-speak" data-t="${wEsc(text)}" onclick="vSpeakEl(this)" title="Talaffuz">🔊</button>` : ''; }
+async function vocabFetch(table, studentId){
+  const all = [];
+  for(let from=0; from<100000; from+=1000){
+    let q = sb.from(table).select('*'); if(studentId) q = q.eq('student_id', studentId);
+    const {data, error} = await q.range(from, from+999); if(error) throw error;
+    all.push(...data); if(data.length<1000) break;
+  }
+  return all.map(r=>fromRow(table, r));
+}
+async function vocabEnsure(){
+  if(vocabLoaded || vocabLoading) return;
+  vocabLoading = true;
+  try{
+    const st = vocabStudent();
+    DB.vocabProgress = await vocabFetch('vocab_progress', st?st.id:null);
+    DB.vocabDaily = st ? await vocabFetch('vocab_daily', st.id) : [];
+    vocabLoaded = true;
+  }catch(e){ vocabWarn(e); vocabLoaded = true; }
+  vocabLoading = false;
+  if(['games','review','cards','hard'].includes(activeTab) && !vocabState.started) renderMain();
+}
+function vocabInitState(){
+  const st = vocabStudent(); if(!st || vocabState.topics) return;
+  let t = []; try{ t = JSON.parse(localStorage.getItem('vtopics_'+st.id)||'[]'); }catch(e){}
+  vocabState.topics = Array.isArray(t) ? t : [];
+}
+function vSaveTopics(){ const st = vocabStudent(); if(st){ try{ localStorage.setItem('vtopics_'+st.id, JSON.stringify(vocabState.topics)); }catch(e){} } }
+function vGoal(){ const st = vocabStudent(); let g = 10; try{ g = parseInt(localStorage.getItem('vgoal_'+st.id))||10; }catch(e){} return g; }
+function vSetGoal(n){ const st = vocabStudent(); try{ localStorage.setItem('vgoal_'+st.id, String(n)); }catch(e){} renderMain(); }
+function vTodayRow(){ const st = vocabStudent(); return DB.vocabDaily.find(d=>d.studentId===st.id && d.day===todayStr()); }
+function vStreak(){
+  const days = new Set(DB.vocabDaily.filter(d=>(d.reviewed||0)>0).map(d=>d.day));
+  let d = todayStr(); if(!days.has(d)) d = vAddDays(d,-1);
+  let n = 0; while(days.has(d)){ n++; d = vAddDays(d,-1); } return n;
+}
+function vBump(n){
+  const st = vocabStudent(); if(!st) return;
+  let row = vTodayRow();
+  if(!row){ row = {studentId:st.id, day:todayStr(), reviewed:0, claimed:false}; DB.vocabDaily.push(row); }
+  row.reviewed = (row.reviewed||0) + n;
+  vQueue(async()=>{
+    if(!row.id){ const r = await insertRow('vocab_daily', {studentId:row.studentId, day:row.day, reviewed:row.reviewed, claimed:!!row.claimed}); row.id = r.id; }
+    else await updateRow('vocab_daily', row.id, {reviewed:row.reviewed});
+  });
+}
+async function vClaim(){
+  const st = vocabStudent(), row = vTodayRow(); if(!st || !row || row.claimed || (row.reviewed||0) < vGoal()) return;
+  row.claimed = true; st.coins = (st.coins||0) + 10; renderMain();
+  vQueue(async()=>{
+    if(!row.id){ const r = await insertRow('vocab_daily', {studentId:row.studentId, day:row.day, reviewed:row.reviewed, claimed:true}); row.id = r.id; }
+    else await updateRow('vocab_daily', row.id, {claimed:true});
+    await updateRow('students', st.id, {coins:st.coins});
+  });
+}
+function vSaveProgress(p){
+  vQueue(async()=>{
+    const payload = {studentId:p.studentId, cardId:p.cardId, front:p.front, back:p.back, hint:p.hint||null, topic:p.topic||null, box:p.box, due:p.due, seen:p.seen, correct:p.correct, wrong:p.wrong, lastDate:p.lastDate};
+    if(p.id) await updateRow('vocab_progress', p.id, payload);
+    else { const r = await insertRow('vocab_progress', payload); p.id = r.id; }
+  });
+}
+function vpFind(cardId){ const st = vocabStudent(); return DB.vocabProgress.find(p=>p.studentId===st.id && p.cardId===cardId); }
+/* mashq o'yinlarida xato qilingan so'zlarni "qiyin so'zlar"ga qo'shish */
+function vocabRecordMistake(front, back){
+  try{
+    const st = vocabStudent(); if(!st || !front || !back || String(front).length>80 || String(back).length>80) return;
+    const id = 'p:'+back+'|'+front, today = todayStr(); let p = vpFind(id);
+    if(!p){ p = {studentId:st.id, cardId:id, front, back, hint:'', topic:"Mashq o'yinlari", box:0, due:today, seen:0, correct:0, wrong:0, lastDate:today}; DB.vocabProgress.push(p); }
+    p.seen++; p.wrong++; p.box = 0; p.due = today; p.lastDate = today; vSaveProgress(p);
+  }catch(e){}
+}
+function vCardsAll(){
+  return DB.wheelQuestions.filter(q=>q.direction==='ru-uz'||q.direction==='uz-ru').map(q=>({id:'w:'+q.id, front:q.question, back:q.answer, hint:q.hint||'', topic:q.topic||''}));
+}
+function vDueCount(){ const st = vocabStudent(); if(!st) return 0; const t = todayStr(); return DB.vocabProgress.filter(p=>p.studentId===st.id && (p.due||t)<=t).length; }
+function vHardList(){ const st = vocabStudent(); if(!st) return []; return DB.vocabProgress.filter(p=>p.studentId===st.id && (p.wrong||0)>0 && (p.box||0)<=2).sort((a,b)=>(b.wrong||0)-(a.wrong||0)); }
+function vBuildQueue(mode){
+  const st = vocabStudent(), today = todayStr();
+  const prog = DB.vocabProgress.filter(p=>p.studentId===st.id);
+  const byId = new Set(prog.map(p=>p.cardId));
+  const sel = vocabState.topics||[];
+  const pool = vCardsAll().filter(c=>!sel.length || sel.includes(c.topic));
+  const asCard = p=>({id:p.cardId, front:p.front, back:p.back, hint:p.hint||'', topic:p.topic||''});
+  if(mode==='due'){
+    const due = prog.filter(p=>(p.due||today)<=today).sort((a,b)=>String(a.due).localeCompare(String(b.due))).slice(0,20).map(asCard);
+    const fresh = practiceShuffle(pool.filter(c=>!byId.has(c.id))).slice(0, vocabState.newCount);
+    return due.concat(fresh);
+  }
+  if(mode==='free') return practiceShuffle(pool).slice(0,30);
+  return vHardList().slice(0,20).map(asCard);
+}
+function vStart(){
+  const s = vocabState; s.queue = vBuildQueue(s.mode); s.idx = 0; s.flipped = false; s.ok = s.hard = s.bad = 0; s.finished = false;
+  if(!s.queue.length){ alert(s.mode==='due' ? "Hozir takrorlaydigan so'z yo'q. Yangi so'zlar uchun mavzu tanlang." : "Bu tanlovda so'z topilmadi."); return; }
+  s.started = true; renderMain();
+}
+function vFlip(){ vocabState.flipped = true; renderMain(); }
+function vAnswer(kind){
+  const s = vocabState, c = s.queue[s.idx], st = vocabStudent(), today = todayStr(); if(!c || !st) return;
+  let p = vpFind(c.id);
+  if(!p){ p = {studentId:st.id, cardId:c.id, front:c.front, back:c.back, hint:c.hint||'', topic:c.topic||'', box:0, due:today, seen:0, correct:0, wrong:0, lastDate:today}; DB.vocabProgress.push(p); }
+  p.seen++; p.lastDate = today;
+  if(kind==='ok'){ p.correct++; p.box = Math.min(5,(p.box||0)+1); p.due = vAddDays(today, V_INT[p.box]); s.ok++; }
+  else if(kind==='hard'){ p.box = Math.max(1,p.box||0); p.due = vAddDays(today,1); s.hard++; }
+  else { p.wrong++; p.box = 0; p.due = today; s.bad++; if(!c._rep) s.queue.push(Object.assign({}, c, {_rep:true})); }
+  vSaveProgress(p);
+  if(!c._rep) vBump(1);
+  s.idx++; s.flipped = false;
+  if(s.idx>=s.queue.length){ s.finished = true; if(s.ok>=3){ try{ wheelConfetti(); }catch(e){} } }
+  renderMain();
+}
+function vExit(){ vocabState.started = false; vocabState.finished = false; renderMain(); }
+function gamesOpen(tab){
+  vocabState.started = false; vocabState.finished = false;
+  vocabState.mode = tab==='review' ? 'due' : tab==='cards' ? 'free' : 'hard';
+  goto_(tab);
+}
+function gamesBack(){
+  if(activeTab==='live-game' && liveGameState.gameId) liveGameCleanup();
+  if(activeTab==='duel' && duelState.duelChannel){ try{ sb.removeChannel(duelState.duelChannel); }catch(e){} if(duelState.timerInterval) clearInterval(duelState.timerInterval); }
+  if(wheelState.big) wheelState.big = false;
+  vocabState.started = false; vocabState.finished = false;
+  goto_('games');
+}
+function vTopicToggle(n){ const i = vocabState.topics.indexOf(n); if(i>=0) vocabState.topics.splice(i,1); else vocabState.topics.push(n); vSaveTopics(); renderMain(); }
+function vTopicClear(){ vocabState.topics = []; vSaveTopics(); renderMain(); }
+function vTopicUpTo(name){
+  if(!name) return; const list = wheelTopicList(), t = list.find(x=>x.name===name); if(!t) return;
+  const k = wheelKitob(name);
+  vocabState.topics = vocabState.topics.filter(x=>wheelKitob(x)!==k).concat(list.filter(x=>wheelKitob(x.name)===k && x.order<=t.order).map(x=>x.name));
+  vSaveTopics(); renderMain();
+}
+/* ---------- Hub ---------- */
+function renderGamesHub(u){
+  vocabEnsure(); vocabInitState();
+  const st = vocabStudent();
+  const card = (tab, ico, title, desc, extra, color)=>`<div class="gh-card" style="--gc:${color};" onclick="gamesOpen('${tab}')"><div class="gh-ico">${ico}</div><div><div class="gh-t">${title}</div><div class="gh-d">${desc}</div>${extra?`<div class="gh-x">${extra}</div>`:''}</div></div>`;
+  let cards = '', banner = '';
+  if(st){
+    const due = vDueCount(), hard = vHardList().length, hasQ = DB.wheelQuestions.length>0;
+    const row = vTodayRow(), done = row?(row.reviewed||0):0, goal = vGoal(), pct = Math.min(100, Math.round(done*100/goal));
+    const streak = vStreak(), canClaim = done>=goal && !(row&&row.claimed);
+    banner = `<div class="card gh-goal"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;">
+        <div><div style="font-weight:700;font-size:16px;">🎯 Bugungi maqsad: ${done} / ${goal} ta so'z</div><div style="color:var(--text-dim);font-size:13px;margin-top:2px;">🔥 ${streak} kun ketma-ket${row&&row.claimed?' · ✅ mukofot olindi':''}</div></div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span style="font-size:12.5px;color:var(--text-dim);">Maqsad:</span>${[5,10,20,30].map(n=>`<button class="wh-chip ${goal===n?'on':''}" style="padding:4px 11px;font-size:13px;" onclick="vSetGoal(${n})">${n}</button>`).join('')}</div></div>
+      <div class="gh-bar"><div style="width:${pct}%;"></div></div>
+      ${canClaim?`<button class="btn gold" style="margin-top:10px;" onclick="vClaim()">🎁 Maqsad bajarildi — +10 coin olish</button>`:''}</div>`;
+    cards = card('review','🔁','Takrorlash',hasQ?`Bugun ${due} ta so'z takrorlash vaqti keldi`:"So'zlar hali yuklanmagan",'Esdan chiqmasligi uchun','#2A7F8E')
+      + card('cards','🃏','Kartochkalar',"Mavzu bo'yicha so'zlarni o'rganing",'Rus ↔ o\'zbek','#6A4C93')
+      + card('hard','😓','Qiyin so\'zlarim',hard?`${hard} ta so'z — ko'proq mashq kerak`:"Hozircha qiyin so'z yo'q",'Xatolaringiz shu yerda','#C1524B')
+      + card('practice','🧩','Mashq o\'yinlari',"Juftlash, xotira, viktorina va boshqalar",'','#3B7A57')
+      + card('duel','⚔️','Bellashuv',"Boshqa o'quvchi bilan musobaqa",'','#C9A227')
+      + card('live-game','🎮','Jonli o\'yin',"O'qituvchi boshlagan o'yinga qo'shiling",'','#1B2540');
+  }else{
+    cards = card('wheel','🎡','Omad g\'ildiragi',"Aylantiring — o'quvchi raqamdagi savolga javob beradi",'Jamoalar bilan ham','#C9A227')
+      + card('live-game','🎮','Jonli o\'yin',"Butun sinf bilan real vaqtda viktorina",'','#1B2540')
+      + card('practice','🧩','Mashq o\'yinlari',"Juftlash, xotira, viktorina va boshqalar",'','#3B7A57')
+      + card('hard','😓','Qiyin so\'zlar',"O'quvchilar eng ko'p xato qilgan so'zlar",'Statistika','#C1524B');
+  }
+  return `<div class="topbar"><div><h1>🎮 O'yinlar</h1><p>Hamma o'yin va mashqlar bir joyda</p></div></div>${banner}<div class="gh-grid">${cards}</div>`;
+}
+/* ---------- Takrorlash / Kartochkalar / Qiyin so'zlar ---------- */
+function topicPickerHtml(sel, hToggle, hUpTo, hClear){
+  const list = wheelTopicList(); if(!list.length) return '';
+  const kitobs = [...new Set(list.map(t=>wheelKitob(t.name)))];
+  const groups = kitobs.map(k=>`<div style="margin-top:8px;"><div style="font-size:12px;font-weight:700;color:var(--text-dim);">📖 ${wEsc(k)}</div><div class="wh-chips" style="margin:4px 0 0;">${list.filter(t=>wheelKitob(t.name)===k).map(t=>`<button class="wh-chip ${sel.includes(t.name)?'on':''}" style="font-size:12.5px;padding:5px 11px;" onclick="${hToggle}(${JSON.stringify(t.name).replace(/"/g,'&quot;')})">${wEsc(t.name.split(' · ').slice(1).join(' · ')||t.name)} <small style="opacity:.7;">${t.n}</small></button>`).join('')}</div></div>`).join('');
+  const opts = kitobs.map(k=>`<optgroup label="${wEsc(k)}">${list.filter(t=>wheelKitob(t.name)===k).map(t=>`<option value="${wEsc(t.name)}">${wEsc(t.name.split(' · ').slice(1).join(' · ')||t.name)}</option>`).join('')}</optgroup>`).join('');
+  return `<div style="margin-top:4px;border-top:1px solid var(--border);padding-top:12px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;"><div style="font-size:12.5px;color:var(--text-dim);">Mavzular ${sel.length?`<b style="color:var(--ink);">— ${sel.length} ta tanlangan</b>`:'— hammasi'}</div>${sel.length?`<button class="btn sm outline" onclick="${hClear}()">Tozalash</button>`:''}</div>
+    <select onchange="${hUpTo}(this.value);" style="margin-top:6px;"><option value="">⏩ Shu mavzugacha o'tilgan (tanlang)…</option>${opts}</select>
+    ${groups}</div>`;
+}
+function renderVocab(u, mode){
+  const st = vocabStudent();
+  if(!st) return `<div class="empty">Bu bo'lim o'quvchilar uchun.</div>`;
+  vocabEnsure(); vocabInitState();
+  const s = vocabState; if(s.mode!==mode){ s.mode = mode; s.started = false; s.finished = false; }
+  const title = {due:'🔁 Takrorlash', free:'🃏 Kartochkalar', hard:"😓 Qiyin so'zlarim"}[mode];
+  if(s.started && !s.finished){
+    const c = s.queue[s.idx], total = s.queue.length, pct = Math.round(s.idx*100/total);
+    return `<div class="vc-wrap"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;"><b>${title}</b><span style="color:var(--text-dim);font-size:13px;">${s.idx+1} / ${total}</span><button class="btn sm outline" onclick="vExit()">✕ To'xtatish</button></div>
+      <div class="gh-bar"><div style="width:${pct}%;"></div></div>
+      <div class="vc-card ${s.flipped?'flip':''}"><div class="vc-front">${wEsc(c.front)} ${vSpeakBtn(c.front)}</div>
+        ${c.hint?`<div class="vc-hint">${wEsc(c.hint)}</div>`:''}
+        ${s.flipped?`<div class="vc-line"></div><div class="vc-back">${wEsc(c.back)} ${vSpeakBtn(c.back)}</div>`:''}
+        <div class="vc-meta">${wEsc((c.topic||'').split(' · ').slice(1).join(' · '))}${c._rep?' · qayta ko\'rish':''}</div></div>
+      ${s.flipped
+        ? `<div class="vc-btns"><button class="btn danger" onclick="vAnswer('bad')">❌ Bilmadim</button><button class="btn outline" onclick="vAnswer('hard')">🤔 Qiyin</button><button class="btn gold" onclick="vAnswer('ok')">✅ Bildim</button></div>`
+        : `<button class="btn gold" style="width:100%;padding:16px;font-size:17px;margin-top:14px;" onclick="vFlip()">👁 Javobni ko'rsatish</button>`}</div>`;
+  }
+  if(s.started && s.finished){
+    const row = vTodayRow(), done = row?(row.reviewed||0):0, goal = vGoal();
+    return `<div class="vc-wrap"><div class="card" style="text-align:center;padding:30px 20px;"><div style="font-size:54px;">${s.ok>=s.bad?'🎉':'💪'}</div><h2 style="margin:6px 0;">Mashq tugadi!</h2>
+      <div style="display:flex;gap:10px;justify-content:center;margin:16px 0;flex-wrap:wrap;"><span class="pill green" style="font-size:15px;padding:6px 14px;">✅ ${s.ok} bildim</span><span class="pill gray" style="font-size:15px;padding:6px 14px;">🤔 ${s.hard} qiyin</span><span class="pill rose" style="font-size:15px;padding:6px 14px;">❌ ${s.bad} bilmadim</span></div>
+      <div style="color:var(--text-dim);">Bugungi maqsad: ${done} / ${goal} · 🔥 ${vStreak()} kun ketma-ket</div>
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap;"><button class="btn gold" onclick="vExit()">Yana mashq qilish</button><button class="btn outline" onclick="gamesBack()">← O'yinlar</button></div></div></div>`;
+  }
+  // sozlash ekrani
+  if(!vocabLoaded) return `<div class="empty">Yuklanmoqda…</div>`;
+  if(!DB.wheelQuestions.length && mode!=='hard') return `<div class="topbar"><div><h1>${title}</h1></div></div><div class="empty">So'zlar hali yuklanmagan. Administrator <b>wheel_questions.sql</b> ni ishga tushirishi kerak.</div>`;
+  if(mode==='hard'){
+    const hl = vHardList();
+    const rows = hl.slice(0,60).map(p=>`<tr><td>${wEsc(p.front)} ${vSpeakBtn(p.front)}</td><td>${wEsc(p.back)}</td><td><span class="pill rose">${p.wrong} xato</span></td></tr>`).join('');
+    return `<div class="topbar"><div><h1>${title}</h1><p>Xato qilgan yoki bilmagan so'zlaringiz — ularni bilib olguncha shu yerda turadi</p></div></div>
+      <div class="card">${hl.length?`<button class="btn gold" onclick="vStart()">▶ Mashq qilish (${Math.min(20,hl.length)} ta so'z)</button>`:''}
+      <table style="margin-top:12px;"><thead><tr><th>So'z</th><th>Javob</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="3" class="empty">Hozircha qiyin so\'z yo\'q. "Takrorlash" va o\'yinlarda xato qilgan so\'zlar shu yerga tushadi.</td></tr>'}</tbody></table></div>`;
+  }
+  const due = vDueCount(), pool = vCardsAll().filter(c=>!(s.topics||[]).length || s.topics.includes(c.topic));
+  const known = new Set(DB.vocabProgress.filter(p=>p.studentId===st.id).map(p=>p.cardId));
+  const fresh = pool.filter(c=>!known.has(c.id)).length;
+  return `<div class="topbar"><div><h1>${title}</h1><p>${mode==='due'?"Esdan chiqmasligi uchun so'zlar vaqti kelganda qayta so'raladi":"Mavzu bo'yicha so'zlarni ko'rib o'rganing"}</p></div></div>
+    <div class="card">
+      ${mode==='due'?`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;"><span class="pill rose" style="font-size:14px;padding:6px 14px;">🔁 Takrorlash kerak: ${due}</span><span class="pill green" style="font-size:14px;padding:6px 14px;">🆕 Yangi so'zlar: ${fresh}</span></div>
+        <div style="font-size:12.5px;color:var(--text-dim);">Bir mashqda nechta yangi so'z?</div><div class="wh-chips">${[5,10,15].map(n=>`<button class="wh-chip ${s.newCount===n?'on':''}" onclick="vocabState.newCount=${n};renderMain();">${n}</button>`).join('')}</div>`
+        :`<div style="margin-bottom:8px;color:var(--text-dim);">Tanlangan mavzulardan ${pool.length} ta so'z — har safar 30 tasi aralash beriladi.</div>`}
+      <div style="font-size:12.5px;color:var(--text-dim);margin-bottom:2px;">Qaysi mavzulargacha o'qigansiz? (shundan keyingi mavzular chiqmaydi)</div>
+      ${topicPickerHtml(s.topics||[], 'vTopicToggle', 'vTopicUpTo', 'vTopicClear')}
+      <button class="btn gold" style="margin-top:16px;padding:13px 28px;font-size:16px;" onclick="vStart()">▶ Boshlash</button>
+    </div>`;
+}
+/* ---------- O'qituvchi/admin: o'quvchilarning qiyin so'zlari ---------- */
+function renderHardWords(u){
+  if(u.role==='student') return renderVocab(u,'hard');
+  vocabEnsure();
+  if(!vocabLoaded) return `<div class="empty">Yuklanmoqda…</div>`;
+  let students = DB.students;
+  if(u.role==='teacher'){ const t = DB.teachers.find(x=>x.userId===u.id); students = students.filter(s=>hasT(s,t?t.id:null)); }
+  const ids = new Set(students.map(s=>s.id));
+  const prog = DB.vocabProgress.filter(p=>ids.has(p.studentId));
+  const m = {};
+  prog.forEach(p=>{ if((p.wrong||0)<=0) return; const k = p.cardId; if(!m[k]) m[k] = {front:p.front, back:p.back, wrong:0, st:new Set()}; m[k].wrong += p.wrong; m[k].st.add(p.studentId); });
+  const top = Object.values(m).sort((a,b)=>b.st.size-a.st.size || b.wrong-a.wrong).slice(0,30);
+  const rows = top.map(x=>`<tr><td>${wEsc(x.front)} ${vSpeakBtn(x.front)}</td><td>${wEsc(x.back)}</td><td>${x.st.size} ta o'quvchi</td><td>${x.wrong}</td></tr>`).join('');
+  const per = students.map(s=>{ const su = DB.users.find(x=>x.id===s.userId); const mine = prog.filter(p=>p.studentId===s.id); const hard = mine.filter(p=>(p.wrong||0)>0 && (p.box||0)<=2).length; const seen = mine.length; const act = DB.vocabDaily.length; return {name:su?su.name:'—', seen, hard, ok:mine.filter(p=>(p.box||0)>=3).length}; }).filter(x=>x.seen>0).sort((a,b)=>b.hard-a.hard);
+  const prow = per.map(x=>`<tr><td>${wEsc(x.name)}</td><td>${x.seen}</td><td>${x.ok}</td><td>${x.hard?`<span class="pill rose">${x.hard}</span>`:'0'}</td></tr>`).join('');
+  return `<div class="topbar"><div><h1>😓 Qiyin so'zlar</h1><p>O'quvchilar eng ko'p xato qilgan so'zlar — darsda shularni takrorlang</p></div></div>
+    <div class="card"><h3>Eng qiyin so'zlar</h3><table><thead><tr><th>So'z</th><th>Javob</th><th>Kimlarda</th><th>Xatolar</th></tr></thead><tbody>${rows||'<tr><td colspan="4" class="empty">Hozircha ma\'lumot yo\'q — o\'quvchilar "Takrorlash" va o\'yinlarni boshlagach shu yerda chiqadi.</td></tr>'}</tbody></table></div>
+    <div class="card"><h3>O'quvchilar bo'yicha</h3><table><thead><tr><th>O'quvchi</th><th>Ko'rilgan so'z</th><th>Yaxshi bilgan</th><th>Qiyin</th></tr></thead><tbody>${prow||'<tr><td colspan="4" class="empty">Hali mashq qilgan o\'quvchi yo\'q</td></tr>'}</tbody></table></div>`;
 }
 
 /* ============ BOOTSTRAP ============ */
@@ -2162,9 +2465,7 @@ const NAV = {
     {id:'materials', label:'Materiallar', icon:'▤'},
     {id:'homework', label:'Uy vazifalari', icon:'📝'},
     {id:'tests', label:'Testlar', icon:'❓'},
-    {id:'live-game', label:'🎮 Jonli o\'yin', icon:'🎮'},
-    {id:'wheel', label:'🎡 Omad g\'ildiragi', icon:'🎡'},
-    {id:'practice', label:'🧩 Mashq o\'yinlari', icon:'🧩'},
+    {id:'games', label:'O\'yinlar', icon:'🎮'},
     {id:'leaderboard', label:'Reyting', icon:'🏆'},
     {id:'rewards', label:'Sovg\'alar', icon:'🎁'},
     {id:'reward-requests', label:'Sovg\'a so\'rovlari', icon:'🎁'},
@@ -2189,9 +2490,7 @@ const NAV = {
     {id:'materials', label:'Materiallarim', icon:'▤'},
     {id:'homework', label:'Uy vazifalari', icon:'📝'},
     {id:'tests', label:'Testlarim', icon:'❓'},
-    {id:'live-game', label:'🎮 Jonli o\'yin', icon:'🎮'},
-    {id:'wheel', label:'🎡 Omad g\'ildiragi', icon:'🎡'},
-    {id:'practice', label:'🧩 Mashq o\'yinlari', icon:'🧩'},
+    {id:'games', label:'O\'yinlar', icon:'🎮'},
     {id:'leaderboard', label:'Reyting', icon:'🏆'},
     {id:'live-class', label:'Onlayn dars', icon:'●'},
     {id:'translator', label:'Tarjimon', icon:'🌐'}
@@ -2203,13 +2502,11 @@ const NAV = {
     {id:'my-ratings', label:'Baholarim', icon:'★'},
     {id:'my-review', label:'Sharh qoldirish', icon:'💬'},
     {id:'ai-chat', label:'AI suhbat (Rus/Ingliz)', icon:'🤖'},
-    {id:'duel', label:'⚔️ Bellashuv', icon:'⚔️'},
-    {id:'practice', label:'🧩 Mashq o\'yinlari', icon:'🧩'},
+    {id:'games', label:'O\'yinlar', icon:'🎮'},
     {id:'videos', label:'Video darslar', icon:'▶'},
     {id:'materials', label:'Materiallar', icon:'▤'},
     {id:'homework', label:'Uy vazifalarim', icon:'📝'},
     {id:'tests', label:'Testlarim', icon:'❓'},
-    {id:'live-game', label:'🎮 Jonli o\'yin', icon:'🎮'},
     {id:'leaderboard', label:'Reyting', icon:'🏆'},
     {id:'rewards', label:'Sovg\'alar', icon:'🎁'},
     {id:'teacher-info', label:'O\'qituvchilar', icon:'▤'},
@@ -2250,7 +2547,7 @@ function renderNav(){
   list.innerHTML = '';
   NAV[u.role].forEach(item=>{
     const div = document.createElement('div');
-    div.className = 'nav-item' + (activeTab===item.id ? ' active' : '');
+    div.className = 'nav-item' + ((activeTab===item.id || (item.id==='games' && GAME_TABS.includes(activeTab))) ? ' active' : '');
     div.innerHTML = `<span>${item.icon}</span><span>${t(item.label)}</span>`;
     div.onclick = ()=>{ if(activeTab==='face-checkin' && item.id!=='face-checkin' && typeof stopFaceCamera==='function') stopFaceCamera(); if(activeTab==='live-game' && item.id!=='live-game' && liveGameState.gameId) liveGameCleanup(); if(activeTab==='duel' && item.id!=='duel' && duelState.duelChannel){ try{ sb.removeChannel(duelState.duelChannel); }catch(e){} if(duelState.timerInterval) clearInterval(duelState.timerInterval); } activeTab = item.id; persistTab(item.id); renderNav(); renderMain(); };
     list.appendChild(div);
@@ -2299,6 +2596,10 @@ function renderMain(){
   else if(activeTab==='requests') html = renderRequests();
   else if(activeTab==='homework') html = renderHomework(u);
   else if(activeTab==='tests') html = renderTests(u);
+  else if(activeTab==='games') html = renderGamesHub(u);
+  else if(activeTab==='review') html = renderVocab(u,'due');
+  else if(activeTab==='cards') html = renderVocab(u,'free');
+  else if(activeTab==='hard') html = renderHardWords(u);
   else if(activeTab==='live-game') html = renderLiveGame(u);
   else if(activeTab==='wheel') html = renderWheel(u);
   else if(activeTab==='duel') html = renderDuel(u);
@@ -6333,7 +6634,7 @@ function practiceAnaUndo(){ const s=practiceState; if(s.answered) return; s.buil
 function practiceAnswer(opt){
   const s = practiceState; if(s.answered) return;
   const it = s.items[s.idx]; s.answered = true; s.picked = opt;
-  if(opt===it.answer) s.score++; else s.mistakes++;
+  if(opt===it.answer) s.score++; else { s.mistakes++; if(it.prompt && it.answer) vocabRecordMistake(it.prompt, it.answer); }
   renderMain();
   if(s.game==='quiz'){ const at=s.idx; setTimeout(()=>{ if(practiceState.game==='quiz' && !practiceState.done && practiceState.idx===at) practiceNext(); }, 550); }
 }
