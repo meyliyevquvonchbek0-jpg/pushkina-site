@@ -397,6 +397,44 @@
     background:var(--navy);color:#fff;border:none;padding:6px 14px;border-radius:6px;
     font-size:12.5px;font-weight:600;cursor:pointer;
   }
+
+  /* ---------- Omad g'ildiragi ---------- */
+  .wh-wrap{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:22px;align-items:start;}
+  @media(max-width:980px){.wh-wrap{grid-template-columns:1fr;}}
+  .wh-wrap>div{min-width:0;}
+  .wh-stage{position:relative;display:flex;flex-direction:column;align-items:center;padding:18px 10px 8px;border-radius:18px;background:radial-gradient(circle at 50% 40%,rgba(201,162,39,.14),transparent 62%),var(--card);border:1px solid var(--border);}
+  .wh-board{position:relative;width:min(92vw,560px);aspect-ratio:1/1;}
+  .wh-board #wh-svg{width:100%;height:100%;display:block;overflow:visible;filter:drop-shadow(0 14px 26px rgba(20,28,60,.28));}
+  .wh-board #wh-svg-wrap{width:100%;height:100%;}
+  .wh-pointer{position:absolute;left:50%;top:-14px;width:max(34px,8.5%);height:auto;aspect-ratio:46/58;transform:translateX(-50%);transform-origin:50% 12%;z-index:5;filter:drop-shadow(0 4px 6px rgba(0,0,0,.35));}
+  .wh-pointer.tick{animation:whTick .12s ease-out;}
+  @keyframes whTick{0%{transform:translateX(-50%) rotate(0)}40%{transform:translateX(-50%) rotate(-16deg)}100%{transform:translateX(-50%) rotate(0)}}
+  .wh-seg-used{opacity:.28;}
+  .wh-spin-btn{margin:18px 0 8px;font-size:20px;font-weight:800;letter-spacing:1.5px;padding:15px 46px;border:none;border-radius:60px;cursor:pointer;color:#1B2540;background:linear-gradient(180deg,#F3D56B,#C9A227);box-shadow:0 6px 0 #8A6E15,0 14px 24px rgba(201,162,39,.4);transition:transform .08s,box-shadow .08s;}
+  .wh-spin-btn:active{transform:translateY(4px);box-shadow:0 2px 0 #8A6E15,0 6px 12px rgba(201,162,39,.35);}
+  .wh-spin-btn:disabled{opacity:.55;cursor:not-allowed;filter:grayscale(.4);}
+  .wh-panel{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:20px;}
+  .wh-chips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px;}
+  .wh-chip{padding:7px 15px;border-radius:30px;border:1px solid var(--border);background:transparent;color:var(--ink);font-weight:600;font-size:14px;cursor:pointer;}
+  .wh-chip.on{background:var(--navy);color:#fff;border-color:var(--navy);}
+  :root[data-theme="dark"] .wh-chip.on{background:var(--gold);color:#1B2540;border-color:var(--gold);}
+  .wh-q{border-radius:16px;padding:22px 20px;background:linear-gradient(135deg,#1B2540,#2C3A63);color:#fff;text-align:center;position:relative;overflow:hidden;animation:whPop .45s cubic-bezier(.2,1.4,.4,1);}
+  @keyframes whPop{from{transform:scale(.8);opacity:0}to{transform:scale(1);opacity:1}}
+  .wh-q .num{display:inline-flex;align-items:center;justify-content:center;min-width:64px;height:64px;padding:0 14px;border-radius:50%;background:linear-gradient(180deg,#F3D56B,#C9A227);color:#1B2540;font-weight:800;font-size:28px;box-shadow:0 4px 12px rgba(0,0,0,.3);}
+  .wh-q .tag{display:inline-block;margin:12px 0 4px;padding:3px 12px;border-radius:20px;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,.14);}
+  .wh-q .hint{opacity:.8;font-size:15px;margin-top:6px;}
+  .wh-q .text{font-family:Georgia,serif;font-size:clamp(28px,4.2vw,46px);line-height:1.2;margin:10px 0 4px;word-break:break-word;}
+  .wh-ans{margin-top:14px;padding:16px;border-radius:14px;background:var(--green-bg);color:var(--green);text-align:center;font-size:clamp(22px,3vw,34px);font-weight:700;animation:whPop .35s ease-out;word-break:break-word;}
+  .wh-ans small{display:block;font-size:12px;letter-spacing:1px;text-transform:uppercase;opacity:.8;margin-bottom:4px;}
+  .wh-empty{padding:34px 18px;text-align:center;color:var(--text-dim);border:2px dashed var(--border);border-radius:16px;}
+  .wh-score{display:flex;gap:10px;margin-top:14px;}
+  .wh-score div{flex:1;text-align:center;padding:10px;border-radius:12px;font-weight:700;}
+  .wh-conf{position:fixed;top:-12px;width:10px;height:14px;z-index:9999;pointer-events:none;animation:whFall 2.4s linear forwards;}
+  @keyframes whFall{to{transform:translateY(105vh) rotate(720deg);opacity:.9}}
+  .wh-board-wrap:fullscreen{background:var(--paper);display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto;}
+  .wh-grid-num{display:flex;gap:5px;flex-wrap:wrap;margin-top:12px;}
+  .wh-grid-num span{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:var(--paper);border:1px solid var(--border);}
+  .wh-grid-num span.u{background:var(--green-bg);color:var(--green);border-color:transparent;text-decoration:line-through;opacity:.8;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
@@ -574,9 +612,15 @@ function fromRow(table, row){
   return obj;
 }
 async function fetchTable(table){
-  const {data, error} = await sb.from(table).select('*');
-  if(error){ console.error('fetch', table, error); return []; }
-  return data.map(r=>fromRow(table, r));
+  // Supabase bir so'rovda 1000 qatordan ortig'ini bermaydi — sahifalab hammasini olamiz
+  const all = []; const PAGE = 1000;
+  for(let from=0; from<200000; from+=PAGE){
+    const {data, error} = await sb.from(table).select('*').range(from, from+PAGE-1);
+    if(error){ console.error('fetch', table, error); return all.map(r=>fromRow(table, r)); }
+    all.push(...data);
+    if(data.length < PAGE) break;
+  }
+  return all.map(r=>fromRow(table, r));
 }
 async function verifyLogin(username, password){
   const {data, error} = await sb.rpc('verify_login', {p_username: username, p_password: password});
@@ -656,6 +700,7 @@ let DB = {
   dailyWords: [],
   botQuestions: [],
   leads: [],
+  wheelQuestions: [],
   videoProgress: [],
   duelWords: [],
   duelSentences: [],
@@ -814,6 +859,229 @@ let session = null; // {userId, role}
 let activeTab = 'home';
 const DAYS = ['Dush','Sesh','Chor','Pay','Jum','Shan','Yak'];
 
+/* ============ OMAD G'ILDIRAGI (o'qituvchi uchun) ============ */
+const WHEEL_LEVELS = ['A1','A2','B1','B2','C1'];
+const WHEEL_DIRS = {'ru-uz':"Ruscha → O'zbekcha", 'uz-ru':"O'zbekcha → Ruscha", 'grammar':'Grammatika'};
+const WHEEL_COLORS = ['#1B2540','#C9A227','#2A7F8E','#C1524B','#3B7A57','#6A4C93'];
+let wheelState = {level:'A1', dir:'all', round:[], used:[], rot:0, spinning:false, current:null, showAnswer:false, ok:0, bad:0, sound:true, manage:false, mLevel:'A1', built:false};
+function wEsc(x){ return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function wheelPool(){
+  return DB.wheelQuestions.filter(q=>q.level===wheelState.level && (wheelState.dir==='all' || q.direction===wheelState.dir));
+}
+function wheelNewRound(){
+  const pool = wheelPool().slice();
+  for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+  wheelState.round = pool.slice(0,30);
+  wheelState.used = []; wheelState.current = null; wheelState.showAnswer = false; wheelState.ok = 0; wheelState.bad = 0;
+  wheelState.built = true;
+}
+function wheelSegPath(i,n,r){
+  const a = 2*Math.PI/n, a0 = i*a - Math.PI/2, a1 = (i+1)*a - Math.PI/2;
+  const x0=r*Math.cos(a0), y0=r*Math.sin(a0), x1=r*Math.cos(a1), y1=r*Math.sin(a1);
+  return `M0 0 L${x0.toFixed(2)} ${y0.toFixed(2)} A${r} ${r} 0 ${n===1?1:0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)} Z`;
+}
+function wheelSvg(){
+  const n = wheelState.round.length, R = 240;
+  if(!n) return '';
+  let seg = '';
+  for(let i=0;i<n;i++){
+    let ci = i % WHEEL_COLORS.length;
+    if(i===n-1 && ci===0) ci = 2; // oxirgi va birinchi segment bir xil rangda yonma-yon bo'lmasin
+    const used = wheelState.used.includes(i);
+    const mid = (i+.5)*360/n;
+    const dark = (WHEEL_COLORS[ci]==='#C9A227') ? '#1B2540' : '#fff';
+    seg += `<g class="${used?'wh-seg-used':''}"><path d="${wheelSegPath(i,n,R)}" fill="${WHEEL_COLORS[ci]}" stroke="#fff" stroke-width="2.5"/>
+      <g transform="rotate(${mid.toFixed(2)})"><text x="0" y="${-R+38}" text-anchor="middle" font-size="${n>24?21:26}" font-weight="800" fill="${dark}" font-family="Georgia,serif">${i+1}</text>
+      ${used?`<text x="0" y="${-R+62}" text-anchor="middle" font-size="16" fill="${dark}">✓</text>`:''}</g></g>`;
+  }
+  let dots = '';
+  for(let i=0;i<n;i++){ const a=(i*360/n)*Math.PI/180 - Math.PI/2; dots += `<circle cx="${((R+9)*Math.cos(a)).toFixed(1)}" cy="${((R+9)*Math.sin(a)).toFixed(1)}" r="4.2" fill="#F3D56B" stroke="#8A6E15" stroke-width="1"/>`; }
+  return `<svg viewBox="-262 -262 524 524" id="wh-svg">
+    <circle r="258" fill="#1B2540"/><circle r="251" fill="none" stroke="#C9A227" stroke-width="3"/>
+    <g id="wh-rot" style="transform:rotate(${wheelState.rot}deg);transform-origin:0 0;">${seg}${dots}</g>
+    <circle r="46" fill="#fff" stroke="#C9A227" stroke-width="6"/><circle r="32" fill="#1B2540"/>
+    <text y="12" text-anchor="middle" font-size="34" font-weight="800" fill="#F3D56B" font-family="Georgia,serif">P</text></svg>`;
+}
+function wheelPointerSvg(){
+  return `<svg viewBox="0 0 46 58" class="wh-pointer" id="wh-pointer"><path d="M23 56 L4 16 A21 21 0 1 1 42 16 Z" fill="#C1524B" stroke="#fff" stroke-width="3"/><circle cx="23" cy="19" r="7" fill="#fff"/></svg>`;
+}
+function renderWheel(u){
+  if(!wheelState.built) wheelNewRound();
+  const n = wheelState.round.length;
+  const poolAll = DB.wheelQuestions.filter(q=>q.level===wheelState.level).length;
+  const levelChips = WHEEL_LEVELS.map(l=>`<button class="wh-chip ${wheelState.level===l?'on':''}" onclick="wheelSetLevel('${l}')">${l} <small style="opacity:.7;">(${DB.wheelQuestions.filter(q=>q.level===l).length})</small></button>`).join('');
+  const dirChips = [['all','Hammasi']].concat(Object.entries(WHEEL_DIRS)).map(([k,v])=>`<button class="wh-chip ${wheelState.dir===k?'on':''}" onclick="wheelSetDir('${k}')">${v}</button>`).join('');
+  const left = n ? `
+      <div class="wh-board-wrap" id="wh-fs"><div class="wh-stage">
+        <div class="wh-board">${wheelPointerSvg()}<div id="wh-svg-wrap">${wheelSvg()}</div></div>
+        <button class="wh-spin-btn" id="wh-spin" onclick="wheelSpin()" ${wheelState.spinning||wheelState.used.length>=n?'disabled':''}>${wheelState.used.length>=n?'RAUND TUGADI':'🎡 AYLANTIRISH'}</button>
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:6px;">${wheelState.used.length} / ${n} savol ishlangan</div>
+      </div></div>` : `
+      <div class="wh-empty"><div style="font-size:44px;">🎡</div><h3 style="margin:8px 0;">Bu daraja uchun savollar yo'q</h3>
+      <p style="margin:0 0 12px;">${poolAll?'Tanlangan yo\'nalishda savol yo\'q — "Hammasi" ni tanlang.':'Pastdagi "Savollar bazasi" orqali savollar qo\'shing (kitobdan).'}</p></div>`;
+  return `
+    <div class="topbar"><div><h1>🎡 Omad g'ildiragi</h1><p>O'qituvchi aylantiradi, g'ildirak raqamda to'xtaydi — o'quvchi shu raqamdagi savolga javob beradi</p></div></div>
+    <div class="wh-wrap">
+      <div>${left}</div>
+      <div>
+        <div class="wh-panel">
+          <div style="font-size:12.5px;color:var(--text-dim);">Daraja</div><div class="wh-chips">${levelChips}</div>
+          <div style="font-size:12.5px;color:var(--text-dim);">Savol turi</div><div class="wh-chips">${dirChips}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn sm outline" onclick="wheelRestart()">🔄 Yangi raund</button>
+            <button class="btn sm outline" onclick="wheelFullscreen()">⛶ To'liq ekran</button>
+            <button class="btn sm outline" onclick="wheelToggleSound()">${wheelState.sound?'🔊 Ovoz yoqilgan':'🔇 Ovoz o\'chiq'}</button>
+          </div>
+          ${n?`<div class="wh-grid-num">${wheelState.round.map((_,i)=>`<span class="${wheelState.used.includes(i)?'u':''}">${i+1}</span>`).join('')}</div>`:''}
+          <div class="wh-score"><div style="background:var(--green-bg);color:var(--green);">✓ To'g'ri: ${wheelState.ok}</div><div style="background:var(--rose-bg);color:var(--rose);">✗ Xato: ${wheelState.bad}</div></div>
+        </div>
+        <div id="wh-result" style="margin-top:16px;">${wheelResultHtml()}</div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:22px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <h3 style="margin:0;">📚 Savollar bazasi</h3>
+        <button class="btn sm ${wheelState.manage?'gold':'outline'}" onclick="wheelState.manage=!wheelState.manage;renderMain();">${wheelState.manage?'Yopish':'Ochish / tahrirlash'}</button>
+      </div>
+      ${wheelState.manage?wheelManageHtml():`<div class="hint">Jami ${DB.wheelQuestions.length} ta savol. Har daraja uchun kamida 30 tadan bo'lishi tavsiya etiladi.</div>`}
+    </div>`;
+}
+function wheelResultHtml(){
+  const q = wheelState.current;
+  if(wheelState.spinning) return `<div class="wh-empty">Aylanmoqda… 🍀</div>`;
+  if(!q) return `<div class="wh-empty">"Aylantirish" tugmasini bosing — savol shu yerda chiqadi</div>`;
+  const idx = wheelState.round.indexOf(q);
+  const instr = q.hint || (q.direction==='ru-uz'?"O'zbekchaga tarjima qiling":q.direction==='uz-ru'?"Ruschaga tarjima qiling":"Savolga javob bering");
+  return `<div class="wh-q"><span class="num">${idx+1}</span><br>
+      <span class="tag">${wEsc(WHEEL_DIRS[q.direction]||'Savol')}</span>
+      <div class="hint">${wEsc(instr)}</div>
+      <div class="text">${wEsc(q.question)}</div></div>
+    ${wheelState.showAnswer
+      ? `<div class="wh-ans"><small>To'g'ri javob</small>${wEsc(q.answer)}</div>
+         <div style="display:flex;gap:10px;margin-top:12px;"><button class="btn gold" style="flex:1;" onclick="wheelMark(true)">✓ To'g'ri javob berdi</button><button class="btn danger" style="flex:1;" onclick="wheelMark(false)">✗ Xato / bilmadi</button></div>`
+      : `<button class="btn gold" style="width:100%;margin-top:12px;padding:13px;font-size:16px;" onclick="wheelReveal()">👁 Javobni ko'rsatish</button>`}`;
+}
+function wheelSetLevel(l){ wheelState.level=l; wheelNewRound(); renderMain(); }
+function wheelSetDir(d){ wheelState.dir=d; wheelNewRound(); renderMain(); }
+function wheelRestart(){ if(wheelState.spinning) return; wheelNewRound(); renderMain(); }
+function wheelReveal(){ wheelState.showAnswer=true; document.getElementById('wh-result').innerHTML = wheelResultHtml(); }
+function wheelMark(ok){
+  if(ok){ wheelState.ok++; wheelConfetti(); wheelSound('win'); } else { wheelState.bad++; wheelSound('bad'); }
+  wheelState.current = null; wheelState.showAnswer = false; renderMain();
+}
+function wheelToggleSound(){ wheelState.sound=!wheelState.sound; renderMain(); }
+function wheelFullscreen(){
+  const el = document.getElementById('wh-fs'); if(!el) return;
+  if(document.fullscreenElement){ document.exitFullscreen(); return; }
+  if(el.requestFullscreen) el.requestFullscreen().catch(()=>{});
+}
+let _wAudio = null;
+function wheelSound(kind){
+  if(!wheelState.sound) return;
+  try{
+    _wAudio = _wAudio || new (window.AudioContext||window.webkitAudioContext)();
+    const ac=_wAudio, t=ac.currentTime;
+    const tone=(f,st,d,type,vol)=>{ const o=ac.createOscillator(), g=ac.createGain(); o.type=type; o.frequency.value=f; g.gain.setValueAtTime(vol,t+st); g.gain.exponentialRampToValueAtTime(.0001,t+st+d); o.connect(g); g.connect(ac.destination); o.start(t+st); o.stop(t+st+d+.02); };
+    if(kind==='tick') tone(900,0,.05,'square',.05);
+    else if(kind==='win'){ [523,659,784,1047].forEach((f,i)=>tone(f,i*.11,.3,'triangle',.12)); }
+    else if(kind==='stop'){ [392,523,659].forEach((f,i)=>tone(f,i*.09,.35,'triangle',.12)); }
+    else if(kind==='bad'){ tone(220,0,.35,'sawtooth',.06); }
+  }catch(e){}
+}
+function wheelConfetti(){
+  const cols=['#C9A227','#C1524B','#2A7F8E','#3B7A57','#6A4C93','#F3D56B'];
+  for(let i=0;i<46;i++){
+    const d=document.createElement('div'); d.className='wh-conf';
+    d.style.left=(Math.random()*100)+'vw'; d.style.background=cols[i%cols.length];
+    d.style.animationDelay=(Math.random()*.5)+'s'; d.style.animationDuration=(1.8+Math.random()*1.4)+'s';
+    d.style.transform='rotate('+Math.floor(Math.random()*360)+'deg)';
+    document.body.appendChild(d); setTimeout(()=>d.remove(),3600);
+  }
+}
+function wheelSpin(){
+  const n = wheelState.round.length;
+  if(wheelState.spinning || !n) return;
+  const free = []; for(let i=0;i<n;i++) if(!wheelState.used.includes(i)) free.push(i);
+  if(!free.length) return;
+  const k = free[Math.floor(Math.random()*free.length)];
+  const segA = 360/n;
+  const off = segA*(.18 + Math.random()*.64);
+  const needed = ((-(k*segA+off)) % 360 + 360) % 360;
+  const cur = ((wheelState.rot % 360)+360)%360;
+  let delta = ((needed - cur) % 360 + 360) % 360;
+  delta += 360*(5+Math.floor(Math.random()*3));
+  const start = wheelState.rot, dur = 5200 + Math.random()*1800, t0 = performance.now();
+  wheelState.spinning = true; wheelState.current = null; wheelState.showAnswer = false;
+  const btn = document.getElementById('wh-spin'); if(btn) btn.disabled = true;
+  document.getElementById('wh-result').innerHTML = wheelResultHtml();
+  const g = document.getElementById('wh-rot'), ptr = document.getElementById('wh-pointer');
+  let lastSeg = -1;
+  const ease = x=>1-Math.pow(1-x,4);
+  function frame(now){
+    const x = Math.min(1,(now-t0)/dur), ang = start + delta*ease(x);
+    if(g) g.style.transform = 'rotate('+ang+'deg)';
+    const segNow = Math.floor((((-ang)%360+360)%360)/segA);
+    if(segNow!==lastSeg){ lastSeg=segNow; wheelSound('tick'); if(ptr){ ptr.classList.remove('tick'); void ptr.getBoundingClientRect(); ptr.classList.add('tick'); } }
+    if(x<1){ requestAnimationFrame(frame); }
+    else{
+      wheelState.rot = start+delta; wheelState.spinning=false;
+      wheelState.used.push(k); wheelState.current = wheelState.round[k];
+      wheelSound('stop'); renderMain();
+    }
+  }
+  requestAnimationFrame(frame);
+}
+/* --- savollar bazasi (kitobdan) --- */
+function wheelManageHtml(){
+  const ml = wheelState.mLevel;
+  const list = DB.wheelQuestions.filter(q=>q.level===ml);
+  const lvlChips = WHEEL_LEVELS.map(l=>`<button class="wh-chip ${ml===l?'on':''}" onclick="wheelState.mLevel='${l}';renderMain();">${l} (${DB.wheelQuestions.filter(q=>q.level===l).length})</button>`).join('');
+  const rows = list.slice(0,200).map(q=>`<tr><td><span class="pill gray">${wEsc((WHEEL_DIRS[q.direction]||q.direction||'').split(' ')[0])}</span></td><td>${wEsc(q.hint?q.hint+': ':'')}<b>${wEsc(q.question)}</b></td><td>${wEsc(q.answer)}</td><td>${wEsc(q.topic||'')}</td><td><button class="btn sm danger" onclick="wheelDelete('${q.id}')">×</button></td></tr>`).join('');
+  return `
+    <div class="wh-chips" style="margin-top:12px;">${lvlChips}</div>
+    ${list.length<30?`<div class="hint" style="color:var(--rose);">${ml} darajada ${list.length} ta savol bor — g'ildirak uchun 30 ta kerak.</div>`:''}
+    <details style="margin:10px 0;" open><summary style="cursor:pointer;font-weight:600;">➕ Ko'plab savol qo'shish (har qator: savol | javob)</summary>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">
+        <div><label>Savol turi</label><select id="wm-dir">${Object.entries(WHEEL_DIRS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+        <div><label>Mavzu / kitob bo'limi (ixtiyoriy)</label><input type="text" id="wm-topic" placeholder="masalan: 3-dars, Oila"></div>
+      </div>
+      <label>Ko'rsatma (ixtiyoriy, masalan: "Ko'plikka o'ting")</label><input type="text" id="wm-hint">
+      <label>Savollar (har qatorda: savol | javob)</label>
+      <textarea id="wm-bulk" rows="7" placeholder="дом | uy&#10;книга | kitob&#10;стол | стол ы"></textarea>
+      <div class="err" id="wm-err"></div>
+      <button class="btn gold sm" onclick="wheelBulkAdd()">Qo'shish (${ml} darajaga)</button>
+    </details>
+    <div style="overflow:auto;max-height:420px;"><table><thead><tr><th>Tur</th><th>Savol</th><th>Javob</th><th>Mavzu</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="5" class="empty">Bu darajada savol yo\'q</td></tr>'}</tbody></table></div>
+    ${list.length>200?`<div class="hint">Faqat dastlabki 200 tasi ko'rsatilgan.</div>`:''}`;
+}
+async function wheelBulkAdd(){
+  const err = document.getElementById('wm-err'); err.textContent='';
+  const direction = document.getElementById('wm-dir').value;
+  const topic = document.getElementById('wm-topic').value.trim();
+  const hint = document.getElementById('wm-hint').value.trim();
+  const lines = document.getElementById('wm-bulk').value.split('\n').map(x=>x.trim()).filter(Boolean);
+  const rows = [];
+  for(const ln of lines){
+    const parts = ln.split('|').map(x=>x.trim());
+    if(parts.length<2 || !parts[0] || !parts[1]){ err.textContent = 'Noto\'g\'ri qator: "'+ln.slice(0,40)+'" — "savol | javob" ko\'rinishida yozing.'; return; }
+    rows.push({level:wheelState.mLevel, direction, question:parts[0], answer:parts.slice(1).join(' | '), hint:hint||null, topic:topic||null});
+  }
+  if(!rows.length){ err.textContent='Savollarni kiriting.'; return; }
+  try{
+    for(let i=0;i<rows.length;i+=200){
+      const {data, error} = await sb.from('wheel_questions').insert(rows.slice(i,i+200)).select('*');
+      if(error) throw error;
+      DB.wheelQuestions.push(...data.map(r=>fromRow('wheel_questions', r)));
+    }
+    wheelNewRound(); renderMain();
+  }catch(e){ console.error(e); err.textContent = 'Xatolik: '+((e&&(e.message||e.details))||'noma\'lum')+' (wheel_questions.sql ishga tushirilganmi?)'; }
+}
+async function wheelDelete(id){
+  if(!confirm('Bu savolni o\'chirmoqchimisiz?')) return;
+  try{ await deleteRow('wheel_questions', id); DB.wheelQuestions = DB.wheelQuestions.filter(q=>q.id!==id); wheelNewRound(); renderMain(); }
+  catch(e){ console.error(e); alert('Xatolik yuz berdi.'); }
+}
+
 /* ============ BOOTSTRAP ============ */
 async function boot(){
   try{
@@ -848,6 +1116,7 @@ async function boot(){
     DB.dailyWords = dailyWords;
     DB.botQuestions = botQuestions;
     try{ DB.leads = await fetchTable('leads'); }catch(_){ DB.leads = []; }
+    try{ DB.wheelQuestions = await fetchTable('wheel_questions'); }catch(_){ DB.wheelQuestions = []; }
     DB.videoProgress = videoProgress;
     DB.teacherPayouts = teacherPayouts;
     DB.practiceItems = practiceItems;
@@ -1807,6 +2076,7 @@ const NAV = {
     {id:'homework', label:'Uy vazifalari', icon:'📝'},
     {id:'tests', label:'Testlar', icon:'❓'},
     {id:'live-game', label:'🎮 Jonli o\'yin', icon:'🎮'},
+    {id:'wheel', label:'🎡 Omad g\'ildiragi', icon:'🎡'},
     {id:'practice', label:'🧩 Mashq o\'yinlari', icon:'🧩'},
     {id:'leaderboard', label:'Reyting', icon:'🏆'},
     {id:'rewards', label:'Sovg\'alar', icon:'🎁'},
@@ -1833,6 +2103,7 @@ const NAV = {
     {id:'homework', label:'Uy vazifalari', icon:'📝'},
     {id:'tests', label:'Testlarim', icon:'❓'},
     {id:'live-game', label:'🎮 Jonli o\'yin', icon:'🎮'},
+    {id:'wheel', label:'🎡 Omad g\'ildiragi', icon:'🎡'},
     {id:'practice', label:'🧩 Mashq o\'yinlari', icon:'🧩'},
     {id:'leaderboard', label:'Reyting', icon:'🏆'},
     {id:'live-class', label:'Onlayn dars', icon:'●'},
@@ -1942,6 +2213,7 @@ function renderMain(){
   else if(activeTab==='homework') html = renderHomework(u);
   else if(activeTab==='tests') html = renderTests(u);
   else if(activeTab==='live-game') html = renderLiveGame(u);
+  else if(activeTab==='wheel') html = renderWheel(u);
   else if(activeTab==='duel') html = renderDuel(u);
   else if(activeTab==='practice') html = renderPractice(u);
   else if(activeTab==='take-test') html = renderTakeTest(u);
