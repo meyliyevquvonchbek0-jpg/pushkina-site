@@ -520,6 +520,7 @@ const FIELD_MAP = {
   teachers: {userId:'user_id', certificateUrl:'certificate_url', highlightUrl:'highlight_url', isLive:'is_live', totalStudentsTaught:'total_students_taught', certificateLevel:'certificate_level', faceDescriptor:'face_descriptor', telegramChatId:'telegram_chat_id'},
   teacher_ratings: {teacherId:'teacher_id', studentId:'student_id'},
   daily_words: {},
+  leads: {telegramUsername:'telegram_username', telegramId:'telegram_id', createdAt:'created_at'},
   bot_questions: {teacherMessageId:'teacher_message_id', teacherChatId:'teacher_chat_id', studentChatId:'student_chat_id', studentName:'student_name', createdAt:'created_at'},
   video_progress: {studentId:'student_id', videoId:'video_id', maxWatchedSeconds:'max_watched_seconds'},
   live_games: {testId:'test_id', teacherId:'teacher_id', currentQuestionIndex:'current_question_index', currentQuestionStartedAt:'current_question_started_at'},
@@ -654,6 +655,7 @@ let DB = {
   teacherRatings: [],
   dailyWords: [],
   botQuestions: [],
+  leads: [],
   videoProgress: [],
   duelWords: [],
   duelSentences: [],
@@ -845,6 +847,7 @@ async function boot(){
     DB.teacherRatings = teacherRatings;
     DB.dailyWords = dailyWords;
     DB.botQuestions = botQuestions;
+    try{ DB.leads = await fetchTable('leads'); }catch(_){ DB.leads = []; }
     DB.videoProgress = videoProgress;
     DB.teacherPayouts = teacherPayouts;
     DB.practiceItems = practiceItems;
@@ -1086,6 +1089,39 @@ function renderRequests(){
         <tbody>${rows || '<tr><td colspan="4" class="empty">Kutayotgan so\'rov yo\'q</td></tr>'}</tbody>
       </table>
     </div>`;
+}
+function renderLeads(){
+  const list = DB.leads.slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  const rows = list.map(l=>{
+    const done = (l.status||'new')!=='new';
+    const when = (l.createdAt||'').slice(0,16).replace('T',' ');
+    return `<tr ${done?'style="opacity:.6;"':''}>
+      <td>${when}</td>
+      <td>${l.name||'—'}</td>
+      <td>${l.phone?`<a href="tel:${l.phone}">${l.phone}</a>`:'—'}</td>
+      <td>${l.teacher||'—'}</td>
+      <td>${l.telegramUsername&&l.telegramUsername!=='yoq'?`<a href="https://t.me/${l.telegramUsername}" target="_blank" rel="noopener">@${l.telegramUsername}</a>`:'—'}</td>
+      <td><span class="pill ${done?'green':'rose'}">${done?'Bog\'lanildi':'Yangi'}</span></td>
+      <td>${done?'':`<button class="btn sm gold" onclick="markLeadDone('${l.id}')">Bog'landim</button> `}<button class="btn sm danger" onclick="deleteLead('${l.id}')">O'chirish</button></td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="topbar"><div><h1>📨 Botdan arizalar</h1><p>Telegram botda "Ro'yxatdan o'tish" yoki "Shu o'qituvchiga yozilish" orqali kelgan arizalar. Ular bilan bog'lanib, keyin "O'quvchilar" bo'limida qo'shing.</p></div></div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Sana</th><th>Ism</th><th>Telefon</th><th>O'qituvchi</th><th>Telegram</th><th>Holat</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="7" class="empty">Hali ariza yo\'q</td></tr>'}</tbody>
+      </table>
+    </div>`;
+}
+async function markLeadDone(id){
+  try{ await updateRow('leads', id, {status:'done'}); const l=DB.leads.find(x=>x.id===id); if(l) l.status='done'; renderMain(); }
+  catch(e){ console.error(e); alert('Xatolik yuz berdi.'); }
+}
+async function deleteLead(id){
+  if(!confirm('Bu arizani o\'chirmoqchimisiz?')) return;
+  try{ await deleteRow('leads', id); DB.leads = DB.leads.filter(x=>x.id!==id); renderMain(); }
+  catch(e){ console.error(e); alert('Xatolik yuz berdi.'); }
 }
 function renderBotQuestions(){
   const teachersWithChat = DB.teachers.filter(tc=>tc.telegramChatId);
@@ -1763,6 +1799,7 @@ const NAV = {
     {id:'broadcast', label:'📢 Shoshilinch xabar', icon:'📢'},
     {id:'stats', label:'📊 Statistika', icon:'📊'},
     {id:'usage', label:'⏱️ Faollik', icon:'⏱️'},
+    {id:'leads', label:'📨 Botdan arizalar', icon:'📨'},
     {id:'bot-questions', label:'🤖 Bot savollari', icon:'🤖'},
     {id:'payments', label:'To\'lovlar', icon:'₪'},
     {id:'videos', label:'Video darslar', icon:'▶'},
@@ -1831,6 +1868,7 @@ function renderNotifBell(){
   let target = 'requests';
   if(u.role==='admin'){
     count += DB.users.filter(x=>x.role==='student' && x.status==='pending').length;
+    count += DB.leads.filter(l=>(l.status||'new')==='new').length;
     count += DB.reviews.filter(r=>!r.approved).length;
     count += DB.rewardRequests.filter(r=>r.status==='pending').length;
   }else if(u.role==='teacher'){
@@ -1895,6 +1933,7 @@ function renderMain(){
   else if(activeTab==='stats') html = renderStatsDashboard();
   else if(activeTab==='usage') html = renderUsage();
   else if(activeTab==='bot-questions') html = renderBotQuestions();
+  else if(activeTab==='leads') html = renderLeads();
   else if(activeTab==='flashcards') html = renderFlashcards(u);
   else if(activeTab==='teacher-info') html = renderTeacherInfo(u);
   else if(activeTab==='translator') html = renderTranslator();
