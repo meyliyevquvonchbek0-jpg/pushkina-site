@@ -722,7 +722,6 @@ function renderSocialFloat(){
       <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="20" height="20" rx="5.5" stroke="white" stroke-width="2"/><circle cx="12" cy="12" r="4.5" stroke="white" stroke-width="2"/><circle cx="17.5" cy="6.5" r="1.3" fill="white"/></svg>
     </a>`;
   }
-  if(GAME_TABS.includes(activeTab) && activeTab!=='games' && !(activeTab==='wheel' && wheelState.big)) html = `<div style="margin-bottom:12px;"><button class="btn sm outline" onclick="gamesBack()">← O'yinlar</button></div>` + html;
   el.innerHTML = html;
 }
 
@@ -2609,6 +2608,7 @@ function renderMain(){
   else if(activeTab==='rewards') html = renderRewards(u);
   else if(activeTab==='reward-requests') html = renderRewardRequests();
   else if(activeTab==='reviews') html = renderReviews(u);
+  if(GAME_TABS.includes(activeTab) && activeTab!=='games' && !(activeTab==='wheel' && wheelState.big)) html = `<div style="margin-bottom:12px;"><button class="btn sm outline" onclick="gamesBack()">← O'yinlar</button></div>` + html;
   el.innerHTML = html;
 }
 
