@@ -1987,7 +1987,7 @@ function handleLogout(){
 function curUser(){ return DB.users.find(u=>u.id===session.userId); }
 
 /* ============ SAYTDA O'TKAZILGAN VAQT ============ */
-let _actAt = Date.now(), _pendingSec = 0, _flushing = false;
+let _actAt = Date.now(), _pendingSec = 0, _flushing = false, _pendTab = {}, _flushingTab = false;
 ['mousemove','keydown','click','touchstart','scroll'].forEach(ev=>window.addEventListener(ev, ()=>{ _actAt = Date.now(); }, {passive:true}));
 async function flushUsage(){
   if(_flushing || _pendingSec<=0 || !session) return;
@@ -2000,20 +2000,51 @@ async function flushUsage(){
 }
 setInterval(()=>{
   if(!session) return;
-  if(document.visibilityState==='visible' && Date.now()-_actAt < 300000) _pendingSec += 15;
-  if(_pendingSec>=60) flushUsage();
+  if(document.visibilityState==='visible' && Date.now()-_actAt < 300000){ _pendingSec += 15; const tk = activeTab||'home'; _pendTab[tk] = (_pendTab[tk]||0) + 15; }
+  if(_pendingSec>=60){ flushUsage(); flushTabs(); }
 }, 15000);
-document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') flushUsage(); });
-window.addEventListener('pagehide', ()=>{ flushUsage(); });
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden'){ flushUsage(); flushTabs(); } });
+window.addEventListener('pagehide', ()=>{ flushUsage(); flushTabs(); });
+async function flushTabs(){
+  if(_flushingTab || !session) return;
+  const snap = Object.assign({}, _pendTab); const keys = Object.keys(snap).filter(k=>snap[k]>0); if(!keys.length) return;
+  _flushingTab = true;
+  try{
+    const {error} = await sb.rpc('add_usage_tabs', {p_user: String(session.userId), p_data: snap});
+    if(!error) keys.forEach(k=>{ _pendTab[k] = (_pendTab[k]||0) - snap[k]; if(_pendTab[k]<=0) delete _pendTab[k]; });
+  }catch(e){}
+  _flushingTab = false;
+}
 function fmtDur(sec){
   sec = Math.round(sec||0); if(sec<60) return sec? sec+' s' : '—';
   const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60);
   return h? h+' soat '+m+' daq' : m+' daq';
 }
-let usageData = null, usageFilter = 'all', usageSort = 'd7';
+let usageData = null, usageFilter = 'all', usageSort = 'd7', usageTabs = null, usageDetail = null, usagePeriod = 'd7';
+const TAB_EXTRA = {'take-test':'Test topshirish','review':'O\'yinlar · Takrorlash','cards':'O\'yinlar · Kartochkalar','hard':'O\'yinlar · Qiyin so\'zlar','games':'O\'yinlar','live-game':'O\'yinlar · Jonli o\'yin','wheel':'O\'yinlar · Omad g\'ildiragi','practice':'O\'yinlar · Mashq','duel':'O\'yinlar · Bellashuv','home':'Bosh sahifa'};
+function tabLabel(k){
+  if(TAB_EXTRA[k]) return TAB_EXTRA[k];
+  for(const r of Object.keys(NAV)){ const it = NAV[r].find(x=>x.id===k); if(it) return String(it.label).replace(/^[^\wА-Яа-яЁё']+\s*/,''); }
+  return k;
+}
+function usageDetailHtml(){
+  const u = DB.users.find(x=>x.id===usageDetail); if(!u) return '';
+  const per = [['today','Bugun'],['d7','7 kun'],['d30','30 kun'],['total','Jami']];
+  const pbtn = (k,l)=>`<button class="btn sm ${usagePeriod===k?'gold':'outline'}" onclick="usagePeriod='${k}';renderMain()">${l}</button>`;
+  let body;
+  if(usageTabs===null) body = `<div class="empty">Bo'limlar bo'yicha hisob hali yoqilmagan. Supabase'da <b>usage_sections.sql</b> ni ishga tushiring.</div>`;
+  else{
+    const mine = usageTabs.filter(r=>String(r.user_id)===String(u.id) && (r[usagePeriod]||0)>0).sort((a,b)=>(b[usagePeriod]||0)-(a[usagePeriod]||0));
+    const tot = mine.reduce((a,r)=>a+(r[usagePeriod]||0),0);
+    body = mine.length ? mine.map(r=>{ const v=r[usagePeriod], pc=Math.round(v*100/tot); return `<div style="margin:10px 0;"><div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;"><span>${wEsc(tabLabel(r.tab))}</span><span><b>${fmtDur(v)}</b> <span style="color:var(--text-dim);">· ${pc}%</span></span></div><div class="gh-bar" style="margin-top:4px;height:8px;"><div style="width:${pc}%;"></div></div></div>`; }).join('') + `<div style="margin-top:12px;font-size:13px;color:var(--text-dim);">Jami: <b>${fmtDur(tot)}</b></div>`
+      : `<div class="empty">Bu davrda ma'lumot yo'q. Bo'limlar bo'yicha hisob yangilanish o'rnatilgandan keyin yig'ila boshlaydi.</div>`;
+  }
+  return `<div class="card" style="margin-bottom:12px;"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;"><h3 style="margin:0;">📊 ${wEsc(u.name)} — nimaga qancha vaqt ketdi</h3><div style="display:flex;gap:6px;flex-wrap:wrap;">${per.map(([k,l])=>pbtn(k,l)).join('')}<button class="btn sm outline" onclick="usageDetail=null;renderMain()">✕</button></div></div>${body}</div>`;
+}
 async function loadUsage(){
   const {data, error} = await sb.rpc('usage_summary');
   usageData = error ? {error: error.message||'xato'} : {rows: data||[]};
+  try{ const r2 = await sb.rpc('usage_tabs_summary'); usageTabs = r2.error ? null : (r2.data||[]); }catch(e){ usageTabs = null; }
   if(activeTab==='usage') renderMain();
 }
 function renderUsage(){
@@ -2033,17 +2064,18 @@ function renderUsage(){
   const fbtn = (k,l)=>`<button class="btn sm ${usageFilter===k?'gold':'outline'}" onclick="usageFilter='${k}';renderMain()">${l}</button>`;
   const sbtn = (k,l)=>`<button class="btn sm ${usageSort===k?'gold':'outline'}" onclick="usageSort='${k}';renderMain()">${l}</button>`;
   const now = Date.now();
-  return `<div class="topbar"><div><h1>⏱️ Faollik</h1><p>Har bir ${isT?'o\'quvchingiz':'foydalanuvchi'} saytda qancha vaqt faol bo'lgani (sahifa ochiq va harakat bor vaqt)</p></div><button class="btn outline" onclick="usageData=null;renderMain()">🔄 Yangilash</button></div>
+  return `<div class="topbar"><div><h1>⏱️ Faollik</h1><p>Har bir ${isT?'o\'quvchingiz':'foydalanuvchi'} saytda qancha vaqt faol bo'lgani (sahifa ochiq va harakat bor vaqt). Qatorni bosing — qaysi bo'limda qancha vaqt o'tkazgani chiqadi.</p></div><button class="btn outline" onclick="usageData=null;renderMain()">🔄 Yangilash</button></div>
     <div class="card" style="margin-bottom:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
       ${isT?'<b>Sizning o\'quvchilaringiz</b>':fbtn('all','Hammasi')+fbtn('student',"O'quvchilar")+fbtn('teacher',"O'qituvchilar")}
       <span style="margin-left:auto;font-size:12px;color:var(--text-dim);">Saralash:</span> ${sbtn('today','Bugun')}${sbtn('d7','7 kun')}${sbtn('d30','30 kun')}${sbtn('total','Jami')}
     </div>
+    ${usageDetail?usageDetailHtml():''}
     <div class="card"><div style="overflow-x:auto;"><table>
       <thead><tr><th>Foydalanuvchi</th><th>Rol</th><th>Bugun</th><th>7 kun</th><th>30 kun</th><th>Jami</th><th>Oxirgi kirish</th></tr></thead>
       <tbody>${rows.map(({u,r})=>{
         const ls = r.last_seen ? new Date(r.last_seen) : null;
         const online = ls && (now-ls.getTime())<180000;
-        return `<tr><td>${u.name}</td><td>${roleLbl[u.role]||u.role}</td><td>${fmtDur(r.today)}</td><td>${fmtDur(r.d7)}</td><td>${fmtDur(r.d30)}</td><td><b>${fmtDur(r.total)}</b></td><td>${online?'<span class="pill green">🟢 hozir</span>':(ls?ls.toLocaleString():'—')}</td></tr>`;
+        return `<tr style="cursor:pointer;${usageDetail===u.id?'background:var(--bg);':''}" onclick="usageDetail='${u.id}';renderMain();window.scrollTo(0,0)"><td>${u.name} <small style="color:var(--text-dim);">📊</small></td><td>${roleLbl[u.role]||u.role}</td><td>${fmtDur(r.today)}</td><td>${fmtDur(r.d7)}</td><td>${fmtDur(r.d30)}</td><td><b>${fmtDur(r.total)}</b></td><td>${online?'<span class="pill green">🟢 hozir</span>':(ls?ls.toLocaleString():'—')}</td></tr>`;
       }).join('') || '<tr><td colspan="7" class="empty">Ma\'lumot yo\'q</td></tr>'}</tbody>
     </table></div></div>`;
 }
