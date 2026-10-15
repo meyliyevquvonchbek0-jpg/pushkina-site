@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Akademiya Pushkina — Boshqaruv tizimi</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Lora:wght@600;700&display=swap" rel="stylesheet">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#2A1F5E">
@@ -532,20 +532,18 @@
     --green:#7BD0A0; --green-bg:rgba(123,208,160,0.16);
   }
   body{
-    background:linear-gradient(180deg,#F1EBFA 0%,#F6E9EE 55%,#FBE4D8 100%) fixed;
+    background:#F1EBFA;
     font-family:"Inter","Segoe UI",-apple-system,Roboto,Arial,sans-serif;
     -webkit-font-smoothing:antialiased;
   }
-  :root[data-theme="dark"] body{
-    background:linear-gradient(180deg,#1B1A4A 0%,#3A2A6B 38%,#8A4A7C 72%,#E58F73 100%) fixed;
-  }
+  :root[data-theme="dark"] body{background:#1B1A4A;}
+  body{background-color:#F1EBFA;}
   body::before{
-    content:"";position:fixed;left:0;right:0;bottom:0;height:260px;z-index:-1;pointer-events:none;
-    background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 260' preserveAspectRatio='none'><g fill='%232A1F5E' fill-opacity='.05'><path d='M0 260V190q60-60 120 0v-10h50v-30q40-70 80 0v110z'/><path d='M300 260v-60h60q0-70 50-70t50 70h60v60z'/><path d='M560 260v-120l30-60 30 60v120z'/><path d='M680 260v-70h60q0-110 110-110t110 110h60v70z'/><path d='M1050 260v-90h70q0-60 50-60t50 60h70v90z'/><path d='M1320 260v-170h14v170zM1380 260v-130h14v130z'/></g></svg>") bottom/100% 100% no-repeat;
+    content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background:linear-gradient(180deg,rgba(244,238,250,0.90) 0%,rgba(248,232,236,0.84) 55%,rgba(251,228,216,0.80) 100%),url(bg.jpg) center bottom/cover no-repeat;
   }
   :root[data-theme="dark"] body::before{
-    background:radial-gradient(ellipse 420px 240px at 52% 100%,rgba(255,206,150,0.45),transparent 70%),
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 260' preserveAspectRatio='none'><g fill='%23251A48' fill-opacity='.92'><path d='M0 260V190q60-60 120 0v-10h50v-30q40-70 80 0v110z'/><path d='M300 260v-60h60q0-70 50-70t50 70h60v60z'/><path d='M560 260v-120l30-60 30 60v120z'/><path d='M680 260v-70h60q0-110 110-110t110 110h60v70z'/><path d='M1050 260v-90h70q0-60 50-60t50 60h70v90z'/><path d='M1320 260v-170h14v170zM1380 260v-130h14v130z'/></g></svg>") bottom/100% 100% no-repeat;
+    background:linear-gradient(180deg,rgba(27,26,74,0.82) 0%,rgba(42,31,94,0.58) 45%,rgba(30,20,60,0.74) 100%),url(bg.jpg) center bottom/cover no-repeat;
   }
   h1,h2,h3{font-family:"Inter","Segoe UI",-apple-system,Roboto,Arial,sans-serif;font-weight:700;letter-spacing:-0.02em;}
   .topbar h1{font-size:28px;letter-spacing:-0.03em;}
@@ -610,13 +608,8 @@
   .landing-nav{background:rgba(244,238,248,0.8);border-bottom-color:var(--border);}
   :root[data-theme="dark"] .landing-nav{background:rgba(27,26,74,0.8);}
   .landing-hero{
-    padding:84px 5% 110px;color:#fff;position:relative;overflow:hidden;
-    background:radial-gradient(ellipse 520px 260px at 50% 100%,rgba(255,206,150,0.55),transparent 70%),
-    linear-gradient(180deg,#1B1A4A 0%,#3A2A6B 45%,#8A4A7C 78%,#E58F73 100%);
-  }
-  .landing-hero::after{
-    content:"";position:absolute;left:0;right:0;bottom:0;height:150px;pointer-events:none;
-    background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 260' preserveAspectRatio='none'><g fill='%23251A48' fill-opacity='.95'><path d='M0 260V190q60-60 120 0v-10h50v-30q40-70 80 0v110z'/><path d='M300 260v-60h60q0-70 50-70t50 70h60v60z'/><path d='M560 260v-120l30-60 30 60v120z'/><path d='M680 260v-70h60q0-110 110-110t110 110h60v70z'/><path d='M1050 260v-90h70q0-60 50-60t50 60h70v90z'/><path d='M1320 260v-170h14v170zM1380 260v-130h14v130z'/></g></svg>") bottom/100% 100% no-repeat;
+    padding:96px 5% 120px;color:#fff;position:relative;overflow:hidden;
+    background:linear-gradient(180deg,rgba(27,26,74,0.80) 0%,rgba(58,42,107,0.50) 50%,rgba(138,74,124,0.70) 100%),url(bg.jpg) center 70%/cover no-repeat,#2A1F5E;
   }
   .landing-hero h1{color:#fff;font-weight:300;letter-spacing:-0.035em;font-size:clamp(32px,6vw,58px);line-height:1.1;}
   .landing-hero p{color:rgba(255,255,255,0.82);}
@@ -631,6 +624,42 @@
   .gh-card{border-left-width:1px;}
   .gh-card:hover{transform:translateY(-3px);}
   .brand-mark{border-radius:14px;}
+
+  /* ---- student home (bento) ---- */
+  .sh-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:20px;}
+  .sh-head h1{font-size:clamp(26px,3.6vw,40px);font-weight:700;letter-spacing:-0.035em;line-height:1.1;margin:0;}
+  .sh-head h1 span{font-weight:300;opacity:.85;}
+  .sh-chips{display:flex;gap:8px;flex-wrap:wrap;}
+  .sh-chip{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:999px;background:var(--card);border:1px solid var(--border);font-size:14px;font-weight:600;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);}
+  .sh-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px;margin-bottom:16px;}
+  .sh-grid>.card{margin:0;}
+  .sh-word{grid-column:span 5;grid-row:span 3;display:flex;flex-direction:column;background:linear-gradient(150deg,#F7F2F7 0%,#F4DDD3 100%)!important;color:#2A1F5E;min-height:320px;}
+  .sh-word .k{font-size:13px;opacity:.65;display:flex;justify-content:space-between;}
+  .sh-word .w{font-size:clamp(48px,6.4vw,92px);font-weight:700;letter-spacing:-0.03em;line-height:1.02;margin:auto 0 6px;font-family:"Lora",Georgia,serif;word-break:break-word;}
+  .sh-word .t{font-size:20px;color:#8A3E78;margin-bottom:20px;}
+  .sh-word .btn{align-self:flex-start;background:#2A1F5E!important;color:#fff!important;}
+  .sh-goal{grid-column:span 4;} .sh-next{grid-column:span 3;}
+  .sh-topic{grid-column:span 7;} .sh-rank{grid-column:span 7;}
+  .sh-k{font-size:13px;color:var(--text-dim);margin-bottom:6px;}
+  .sh-big{font-size:48px;font-weight:700;letter-spacing:-0.04em;line-height:1;}
+  .sh-big small{font-size:22px;font-weight:300;opacity:.8;letter-spacing:0;}
+  .sh-bar{height:8px;border-radius:99px;background:rgba(127,115,170,0.25);overflow:hidden;margin-top:14px;}
+  .sh-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#F7C59F,#EE9A78);}
+  .sh-days{display:flex;gap:6px;margin-top:16px;}
+  .sh-days span{flex:1;height:30px;border-radius:9px;display:grid;place-items:center;font-size:11.5px;font-weight:600;background:rgba(127,115,170,0.18);color:var(--text-dim);}
+  .sh-days span.on{background:#2A1F5E;color:#fff;}
+  :root[data-theme="dark"] .sh-days span.on{background:rgba(255,255,255,0.88);color:#2A1F5E;}
+  .sh-next .d{font-size:26px;font-weight:700;letter-spacing:-0.03em;margin-bottom:4px;}
+  .sh-next .m{font-size:13.5px;color:var(--text-dim);line-height:1.5;}
+  .sh-next .o{margin-top:14px;display:flex;flex-direction:column;gap:6px;font-size:13px;}
+  .sh-next .o div{display:flex;justify-content:space-between;}
+  .sh-row{display:flex;justify-content:space-between;font-size:14px;margin:14px 0 6px;}
+  .sh-row b{font-weight:700;}
+  .sh-rank .r{display:flex;align-items:center;gap:14px;cursor:pointer;}
+  .sh-rank .r .n{font-size:34px;font-weight:700;letter-spacing:-0.03em;}
+  .sh-link{margin-top:10px;font-size:13px;font-weight:600;color:var(--gold-dark);cursor:pointer;display:inline-block;}
+  @media(max-width:1000px){.sh-word{grid-column:span 12;grid-row:auto;min-height:240px;}.sh-goal,.sh-next{grid-column:span 6;}.sh-topic,.sh-rank{grid-column:span 12;}}
+  @media(max-width:600px){.sh-goal,.sh-next{grid-column:span 12;}}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
@@ -1396,7 +1425,7 @@ async function vocabEnsure(){
     vocabLoaded = true;
   }catch(e){ vocabWarn(e); vocabLoaded = true; }
   vocabLoading = false;
-  if(['games','review','cards','hard','topics'].includes(activeTab) && !vocabState.started) renderMain();
+  if(['games','review','cards','hard','topics','home'].includes(activeTab) && !vocabState.started) renderMain();
 }
 function vocabInitState(){
   const st = vocabStudent(); if(!st || vocabState.topics) return;
@@ -3168,15 +3197,76 @@ function renderHome(u){
       ${renderAnnouncementsBlock(u)}${dailyWordCardHtml()}`;
   }
   // student
+  return renderStudentHome(u);
+}
+function shNextLessons(s){
+  const ids = sSlotIds(s), now = new Date(), cur = (now.getDay()+6)%7, curMin = now.getHours()*60+now.getMinutes();
+  return ids.map(id=>DB.schedule.find(x=>x.id===id)).filter(Boolean).map(sl=>{
+    const di = DAYS.indexOf(sl.day); const tm = String(sl.time||'00:00').split(':'); const mins = (parseInt(tm[0])||0)*60+(parseInt(tm[1])||0);
+    let delta = ((di-cur+7)%7)*1440 + mins - curMin; if(delta<0) delta += 7*1440;
+    return {sl, delta};
+  }).sort((a,b)=>a.delta-b.delta);
+}
+function renderStudentHome(u){
+  try{ vocabEnsure(); }catch(e){}
   const s = DB.students.find(x=>x.userId===u.id);
   const paid = getPaymentStatus(s?s.id:null);
+  const first = String(u.name||'').split(' ')[0];
+  const ok = typeof vocabLoaded!=='undefined' && vocabLoaded && s;
+  const due = ok ? vDueCount() : 0;
+  const streak = ok ? vStreak() : 0;
+  const row = ok ? vTodayRow() : null, done = row?(row.reviewed||0):0, goal = ok ? vGoal() : 10;
+  const pct = Math.min(100, Math.round(done*100/Math.max(1,goal)));
+  const today = vToday(), mi = (new Date().getDay()+6)%7;
+  const dset = new Set((DB.vocabDaily||[]).filter(d=>(d.reviewed||0)>0).map(d=>d.day));
+  const wd = ['Du','Se','Ch','Pa','Ju','Sh','Ya'];
+  const week = wd.map((n,i)=>`<span class="${dset.has(vAddDays(today,i-mi))?'on':''}">${n}</span>`).join('');
+  const weekN = wd.filter((n,i)=>dset.has(vAddDays(today,i-mi))).length;
+  // word of the day
+  let wordHtml = '';
+  if(DB.dailyWords && DB.dailyWords.length){
+    const daysSince = Math.floor((new Date(todayStr()) - new Date('2026-01-01')) / 86400000);
+    const w = DB.dailyWords[((daysSince % DB.dailyWords.length) + DB.dailyWords.length) % DB.dailyWords.length];
+    if(w) wordHtml = `<div class="card sh-word"><div class="k"><span>Kunning so'zi</span></div><div class="w">${w.word}</div><div class="t">${w.meaning}</div><button class="btn" onclick="goto_('games');gamesOpen('review')">${due?due+" ta takrorlash":"Takrorlashga o'tish"}</button></div>`;
+  }
+  if(!wordHtml) wordHtml = `<div class="card sh-word"><div class="k"><span>O'yinlar</span></div><div class="w">Takrorlash</div><div class="t">So'zlarni mashq qiling</div><button class="btn" onclick="goto_('games')">O'yinlarga o'tish</button></div>`;
+  // next lesson
+  const nl = shNextLessons(s); let nextHtml;
+  if(nl.length){
+    const f = nl[0].sl;
+    nextHtml = `<div class="card sh-next"><div class="sh-k">Keyingi dars</div><div class="d">${f.day}, ${f.time}</div><div class="m">${f.subject||''}${f.teacherId?' · '+teacherName(f.teacherId):''}${f.room?' · '+f.room:''}</div>${nl.length>1?`<div class="o">${nl.slice(1,4).map(x=>`<div><span class="sh-k" style="margin:0">${x.sl.day}</span><b>${x.sl.time}</b></div>`).join('')}</div>`:''}</div>`;
+  } else nextHtml = `<div class="card sh-next"><div class="sh-k">Keyingi dars</div><div class="m">Dars jadvali hali belgilanmagan.</div></div>`;
+  // topic progress
+  let topicHtml = '';
+  try{
+    const th = topicState.theme ? bookTheme(topicState.theme) : BOOK[0];
+    if(typeof topicLoaded!=='undefined' && topicLoaded && ok){
+      const pr = themeProgress(th, trMine(), DB.vocabProgress.filter(p=>p.studentId===s.id));
+      const line = (n,a,b)=>`<div class="sh-row"><span>${n}</span><b>${a} / ${b}</b></div><div class="sh-bar" style="margin-top:0"><i style="width:${Math.round(100*a/Math.max(1,b))}%"></i></div>`;
+      topicHtml = `<div class="card sh-topic"><div class="sh-k">Mavzu: ${th.name}</div>${line("So'zlar",pr.known,pr.wordsN)}${line("O'qish va tinglash",pr.rd+pr.ls,pr.rdN+pr.lsN)}${line("Gapirish va dialog",pr.sp+pr.dg,pr.spN+pr.dgN)}<span class="sh-link" onclick="goto_('games');gamesOpen('topics')">Mavzularni ochish</span></div>`;
+    } else topicHtml = `<div class="card sh-topic"><div class="sh-k">Mavzular</div><div class="sh-big" style="font-size:28px">${BOOK.length} ta mavzu</div><div class="m" style="margin-top:8px;color:var(--text-dim);font-size:13.5px">So'zlar, o'qish, tinglash, gapirish va dialog</div><span class="sh-link" onclick="goto_('games');gamesOpen('topics')">Mavzularni ochish</span></div>`;
+  }catch(e){}
+  // rank
+  const sorted = DB.students.slice().sort((a,b)=>(b.coins||0)-(a.coins||0));
+  const pos = s ? sorted.findIndex(x=>x.id===s.id)+1 : 0;
+  const rankHtml = `<div class="card sh-rank"><div class="sh-k">Reyting</div><div class="r" onclick="goto_('leaderboard')"><span class="n">${pos?pos+"-o'rin":'—'}</span><span class="sh-k" style="margin:0">${s?(s.coins||0):0} coin · ${sorted.length} o'quvchidan</span></div></div>`;
   return `
-    <div class="topbar"><div><h1>Xush kelibsiz, ${u.name}</h1><p>Guruh: ${s?s.group:'—'}</p></div></div>
-    <div class="grid cols-3">
-      <div class="metric"><div class="lbl">To'lov holati</div><div class="val ${paid.ok?'green':'rose'}">${paid.label}</div></div>
-      <div class="metric"><div class="lbl">Coinlarim</div><div class="val gold">${s?s.coins||0:0} 🪙</div></div>
+    <div class="sh-head">
+      <h1>Salom, ${first}<span>${ok?(due?` — bugun ${due} ta takrorlash qoldi`:' — bugungi takrorlash tayyor'):''}</span></h1>
+      <div class="sh-chips">
+        ${ok?`<span class="sh-chip">🔥 ${streak} kun</span>`:''}
+        <span class="sh-chip">🪙 ${s?s.coins||0:0}</span>
+        <span class="sh-chip" style="color:${paid.ok?'var(--green)':'var(--rose)'}">${paid.label}</span>
+      </div>
     </div>
-    ${renderAnnouncementsBlock(u)}${dailyWordCardHtml()}`;
+    <div class="sh-grid">
+      ${wordHtml}
+      <div class="card sh-goal"><div class="sh-k">Bugungi maqsad</div><div class="sh-big">${done}<small>/${goal}</small></div><div class="sh-bar"><i style="width:${pct}%"></i></div><div class="sh-days">${week}</div><div class="sh-k" style="margin:10px 0 0">Shu hafta ${weekN} kun mashq qildingiz</div></div>
+      ${nextHtml}
+      ${topicHtml}
+      ${rankHtml}
+    </div>
+    ${renderAnnouncementsBlock(u)}`;
 }
 function dailyWordCardHtml(){
   if(!DB.dailyWords || !DB.dailyWords.length) return '';
