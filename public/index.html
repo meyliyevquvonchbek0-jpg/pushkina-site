@@ -664,7 +664,7 @@ const FIELD_MAP = {
   daily_totals: {teacherId:'teacher_id', totalTasks:'total_tasks', title:'title'},
   nazorat_scores: {sessionId:'session_id', studentId:'student_id', tasksDone:'tasks_done'},
   settings: {telegramUrl:'telegram_url', instagramUrl:'instagram_url', aboutText:'about_text', adminTelegramChatId:'admin_telegram_chat_id', centerLat:'center_lat', centerLng:'center_lng', centerRadius:'center_radius'},
-  tests: {maxAttempts:'max_attempts', teacherId:'teacher_id', timeLimitMinutes:'time_limit_minutes', videoId:'video_id'},
+  tests: {isLive:'is_live', maxAttempts:'max_attempts', teacherId:'teacher_id', timeLimitMinutes:'time_limit_minutes', videoId:'video_id'},
   test_questions: {testId:'test_id', optionA:'option_a', optionB:'option_b', optionC:'option_c', optionD:'option_d', correctOption:'correct_option'},
   test_attempts: {testId:'test_id', studentId:'student_id', startedAt:'started_at', submittedAt:'submitted_at'},
   homework: {teacherId:'teacher_id', dueDate:'due_date', videoId:'video_id'},
@@ -4562,7 +4562,7 @@ function renderVideos(u){
       s = DB.students.find(x=>x.userId===u.id);
       if(s && s.onlineApproved) isOnlineStudent = true;
     }
-    const linkedTest = DB.tests.find(t=>t.videoId===v.id);
+    const linkedTest = DB.tests.find(t=>!t.isLive && t.videoId===v.id);
     const needsLock = isOnlineStudent && linkedTest;
     if(needsLock){
       const vp = DB.videoProgress.find(x=>x.studentId===s.id && x.videoId===v.id);
@@ -5780,8 +5780,8 @@ function renderTests(u){
   if(u.role==='student') return renderStudentTests(u);
   const myT = u.role==='teacher' ? DB.teachers.find(x=>x.userId===u.id) : null;
   const myTeacherId = myT ? myT.id : null;
-  let list = DB.tests;
-  if(u.role==='teacher') list = DB.tests.filter(x=>x.teacherId===myTeacherId);
+  let list = DB.tests.filter(x=>!x.isLive);
+  if(u.role==='teacher') list = list.filter(x=>x.teacherId===myTeacherId);
   const rows = list.map(test=>{
     const qCount = DB.testQuestions.filter(q=>q.testId===test.id).length;
     const attemptCount = DB.testAttempts.filter(a=>a.testId===test.id).length;
@@ -6094,7 +6094,7 @@ function attemptsOf(testId, studentId){
 }
 function renderStudentTests(u){
   const s = DB.students.find(x=>x.userId===u.id);
-  const list = DB.tests.filter(t=>sTeachers(s).includes(t.teacherId));
+  const list = DB.tests.filter(t=>!t.isLive && sTeachers(s).includes(t.teacherId));
   const rows = list.map(test=>{
     const maxAttempts = testMaxAttempts(test);
     const attempts = attemptsOf(test.id, s.id);
@@ -6276,15 +6276,18 @@ function renderLiveGame(u){
   }
   if(u.role==='admin' || u.role==='teacher'){
     const t = u.role==='teacher' ? DB.teachers.find(x=>x.userId===u.id) : null;
-    const myTests = (u.role==='admin' ? DB.tests : DB.tests.filter(x=>x.teacherId===(t?t.id:null)))
-      .filter(test=>DB.testQuestions.some(q=>q.testId===test.id));
+    const myTests = (u.role==='admin' ? DB.tests : DB.tests.filter(x=>x.teacherId===(t?t.id:null))).filter(test=>test.isLive);
     return `
-      <div class="topbar"><div><h1>🎮 Jonli o'yin</h1><p>Mavjud testdan jonli, real vaqtli o'yin boshlang</p></div></div>
+      <div class="topbar"><div><h1>🎮 Jonli o'yin</h1><p>Jonli o'yin uchun alohida savollar to'plami yarating — oddiy testlar bilan aralashmaydi</p></div>
+        <button class="btn gold" onclick="openLiveTestModal('${u.role}','${t?t.id:''}')">+ Yangi jonli test</button></div>
       <div class="grid cols-3">${myTests.map(test=>{
         const qCount = DB.testQuestions.filter(q=>q.testId===test.id).length;
-        return `<div class="course-card"><div class="cc-tag">${qCount} ta savol</div><h3>${test.title}</h3><p>${fl(test.subject)}</p>
-          <button class="btn sm gold" style="margin-top:10px;" onclick="hostLiveGame('${test.id}')">🎮 Boshlash</button></div>`;
-      }).join('') || '<div class="empty">Avval "Testlar" bo\'limida savolli test yarating</div>'}</div>`;
+        return `<div class="course-card"><div class="cc-tag">${qCount} ta savol</div><h3>${wEsc(test.title)}</h3>${u.role==='admin'?`<p>${wEsc(teacherName(test.teacherId))}</p>`:''}
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">
+            ${qCount?`<button class="btn sm gold" onclick="hostLiveGame('${test.id}')">🎮 Boshlash</button>`:''}
+            <button class="btn sm outline" onclick="openTestQuestionsModal('${test.id}')">${qCount?'Savollar':'+ Savollar yuklash'}</button>
+            <button class="icon-btn rose" onclick="deleteTest('${test.id}')">O'chirish</button></div></div>`;
+      }).join('') || '<div class="empty">Hali jonli test yo\'q. «+ Yangi jonli test» ni bosing, so\'ng savollarni fayl yoki matn orqali yuklang.</div>'}</div>`;
   }
   return `
     <div class="topbar"><div><h1>🎮 Jonli o'yinga qo'shilish</h1><p>O'qituvchi bergan PIN kodni kiriting</p></div></div>
@@ -6294,6 +6297,32 @@ function renderLiveGame(u){
       <div class="err">${liveGameState.joinError}</div>
       <button class="btn gold" style="margin-top:12px;width:100%;" onclick="joinLiveGame()">Qo'shilish</button>
     </div>`;
+}
+function openLiveTestModal(role, myTeacherId){
+  const teacherOptsHtml = DB.teachers.map(tt=>`<option value="${tt.id}">${teacherName(tt.id)}</option>`).join('');
+  const bg = document.createElement('div'); bg.className = 'modal-bg';
+  bg.innerHTML = `<div class="modal"><h3>Yangi jonli test</h3>
+    <label>Nomi</label><input type="text" id="lt-title" placeholder="masalan: Oila mavzusi — jonli viktorina">
+    ${role==='admin' ? `<label>O'qituvchi</label><select id="lt-teacher"><option value="">— tanlang —</option>${teacherOptsHtml}</select>` : ''}
+    <div class="hint" style="margin-top:8px;">Savollarni keyingi qadamda fayl (Word) yoki matn orqali yuklaysiz.</div>
+    <div class="err" id="lt-err"></div>
+    <div class="modal-actions"><button class="btn outline" onclick="this.closest('.modal-bg').remove()">Bekor qilish</button><button class="btn gold" onclick="saveLiveTest('${role}','${myTeacherId}')">Yaratish</button></div></div>`;
+  document.body.appendChild(bg);
+}
+async function saveLiveTest(role, myTeacherId){
+  const title = document.getElementById('lt-title').value.trim(), err = document.getElementById('lt-err');
+  let teacherId = myTeacherId;
+  if(role==='admin'){ teacherId = document.getElementById('lt-teacher').value; if(!teacherId){ err.textContent = "O'qituvchini tanlang."; return; } }
+  if(!title){ err.textContent = 'Nomini kiriting.'; return; }
+  if(!teacherId){ err.textContent = "O'qituvchi aniqlanmadi."; return; }
+  err.textContent = 'Saqlanmoqda...';
+  try{
+    const nt = await insertRow('tests', {teacherId, title, subject:'Jonli o\'yin', timeLimitMinutes:10, maxAttempts:0, isLive:true, date:todayStr()});
+    DB.tests.push(nt); document.querySelector('.modal-bg').remove(); renderMain(); openTestQuestionsModal(nt.id);
+  }catch(e){
+    console.error(e); const msg = (e&&(e.message||e.details))||"noma'lum xato";
+    err.textContent = /is_live|column/i.test(msg) ? "Bazada is_live ustuni yo'q. Supabase'da live_tests.sql ni ishga tushiring." : 'Saqlanmadi: '+msg;
+  }
 }
 async function hostLiveGame(testId){
   const u = curUser();
