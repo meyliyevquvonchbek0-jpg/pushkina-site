@@ -2020,17 +2020,22 @@ function renderUsage(){
   if(!usageData){ loadUsage(); return `<div class="topbar"><div><h1>⏱️ Faollik</h1></div></div><div class="card"><div class="empty">Yuklanmoqda...</div></div>`; }
   if(usageData.error) return `<div class="topbar"><div><h1>⏱️ Faollik</h1></div></div><div class="card"><div class="empty">Xato: ${usageData.error}<br>usage_time.sql ni Supabase da ishga tushiring.</div></div>`;
   const map = {}; usageData.rows.forEach(r=>map[r.user_id]=r);
+  const cu = curUser(), isT = cu.role==='teacher';
   let users = DB.users.filter(u=>u.status!=='pending');
-  if(usageFilter!=='all') users = users.filter(u=>u.role===usageFilter);
+  if(isT){
+    const me = DB.teachers.find(x=>x.userId===cu.id);
+    const mine = new Set(DB.students.filter(st=>me && hasT(st,me.id)).map(st=>st.userId));
+    users = users.filter(u=>mine.has(u.id));
+  } else if(usageFilter!=='all') users = users.filter(u=>u.role===usageFilter);
   const rows = users.map(u=>({u, r: map[String(u.id)]||{today:0,d7:0,d30:0,total:0,last_seen:null}}))
     .sort((a,b)=>(b.r[usageSort]||0)-(a.r[usageSort]||0));
   const roleLbl = {admin:'Admin', teacher:"O'qituvchi", student:"O'quvchi"};
   const fbtn = (k,l)=>`<button class="btn sm ${usageFilter===k?'gold':'outline'}" onclick="usageFilter='${k}';renderMain()">${l}</button>`;
   const sbtn = (k,l)=>`<button class="btn sm ${usageSort===k?'gold':'outline'}" onclick="usageSort='${k}';renderMain()">${l}</button>`;
   const now = Date.now();
-  return `<div class="topbar"><div><h1>⏱️ Faollik</h1><p>Har bir foydalanuvchi saytda qancha vaqt faol bo'lgani (sahifa ochiq va harakat bor vaqt)</p></div><button class="btn outline" onclick="usageData=null;renderMain()">🔄 Yangilash</button></div>
+  return `<div class="topbar"><div><h1>⏱️ Faollik</h1><p>Har bir ${isT?'o\'quvchingiz':'foydalanuvchi'} saytda qancha vaqt faol bo'lgani (sahifa ochiq va harakat bor vaqt)</p></div><button class="btn outline" onclick="usageData=null;renderMain()">🔄 Yangilash</button></div>
     <div class="card" style="margin-bottom:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
-      ${fbtn('all','Hammasi')}${fbtn('student',"O'quvchilar")}${fbtn('teacher',"O'qituvchilar")}
+      ${isT?'<b>Sizning o\'quvchilaringiz</b>':fbtn('all','Hammasi')+fbtn('student',"O'quvchilar")+fbtn('teacher',"O'qituvchilar")}
       <span style="margin-left:auto;font-size:12px;color:var(--text-dim);">Saralash:</span> ${sbtn('today','Bugun')}${sbtn('d7','7 kun')}${sbtn('d30','30 kun')}${sbtn('total','Jami')}
     </div>
     <div class="card"><div style="overflow-x:auto;"><table>
@@ -2481,6 +2486,7 @@ const NAV = {
     {id:'home', label:'Bosh sahifa', icon:'⌂'},
     {id:'my-schedule', label:'Mening jadvalim', icon:'▦'},
     {id:'my-students', label:'O\'quvchilarim', icon:'▤'},
+    {id:'usage', label:'⏱️ Faollik', icon:'⏱️'},
     {id:'my-salary', label:'💰 Mening oyligim', icon:'₪'},
     {id:'attendance', label:'Davomat belgilash', icon:'✓'},
     {id:'payments', label:'To\'lovlar', icon:'₪'},
