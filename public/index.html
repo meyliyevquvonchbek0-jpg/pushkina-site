@@ -660,6 +660,24 @@
   .sh-link{margin-top:10px;font-size:13px;font-weight:600;color:var(--gold-dark);cursor:pointer;display:inline-block;}
   @media(max-width:1000px){.sh-word{grid-column:span 12;grid-row:auto;min-height:240px;}.sh-goal,.sh-next{grid-column:span 6;}.sh-topic,.sh-rank{grid-column:span 12;}}
   @media(max-width:600px){.sh-goal,.sh-next{grid-column:span 12;}}
+
+  /* ---- video dars (Daily) ---- */
+  .dl-card{padding:10px;}
+  .dl-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:4px 4px 10px;flex-wrap:wrap;}
+  .dl-iframe,.g-iframe{width:100%;border:0;border-radius:16px;background:#111;display:block;}
+  .dl-iframe{height:calc(100vh - 230px);min-height:420px;}
+  #guest-screen{display:none;max-width:1100px;margin:0 auto;padding:16px 16px 40px;min-height:100vh;}
+  #guest-screen.show{display:block;}
+  .g-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;}
+  .g-tabs{display:flex;gap:8px;margin-bottom:14px;}
+  .g-tab{flex:1;padding:13px;border-radius:16px;border:1px solid var(--border);background:var(--card);font-weight:600;cursor:pointer;text-align:center;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);}
+  .g-tab.on{background:#2A1F5E;color:#fff;border-color:#2A1F5E;}
+  #g-video-wrap.g-big .g-iframe{height:calc(100vh - 190px);min-height:420px;}
+  #g-video-wrap.g-mini{position:fixed;right:14px;bottom:14px;width:300px;height:190px;z-index:70;border-radius:16px;overflow:hidden;box-shadow:0 14px 40px rgba(20,10,60,0.45);}
+  #g-video-wrap.g-mini .g-iframe{height:100%;border-radius:16px;}
+  .g-expand{display:none;}
+  #g-video-wrap.g-mini .g-expand{display:block;position:absolute;left:6px;top:6px;width:30px;height:30px;border:0;border-radius:9px;background:rgba(0,0,0,0.55);color:#fff;font-size:16px;cursor:pointer;z-index:2;}
+  @media(max-width:600px){#g-video-wrap.g-mini{width:190px;height:125px;right:8px;bottom:8px;}}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
@@ -769,6 +787,7 @@
   <div class="main" id="main-content"></div>
 </div>
 
+<div id="guest-screen"></div>
 <div id="social-float" class="social-float"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1936,6 +1955,7 @@ function bookWheelQuestions(){
 
 /* ============ BOOTSTRAP ============ */
 async function boot(){
+  try{ const gq = new URLSearchParams(location.search).get('dars'); if(gq && /^[a-z0-9-]{6,40}$/.test(gq)){ await Promise.resolve(); return startGuest(gq); } }catch(e){ console.error(e); }
   try{
     const [
       users, teachers, students, schedule, attendance, payments, videos,
@@ -3060,6 +3080,7 @@ function renderNav(){
 
 /* ============ MAIN ROUTER ============ */
 function renderMain(){
+  if(GUEST_MODE){ const g = document.getElementById('g-main'); if(g) g.innerHTML = renderPractice(GUEST_USER); return; }
   const u = curUser();
   const el = document.getElementById('main-content');
   let html = '';
@@ -3283,7 +3304,7 @@ function dailyWordCardHtml(){
       <div style="font-size:14.5px;opacity:.95;">${w.meaning}</div>
     </div>`;
 }
-function goto_(tab){ activeTab = tab; persistTab(tab); renderNav(); renderMain(); }
+function goto_(tab){ if(tab!=='live-class' && DL.frame && DL.frame.kind!=='guest'){ DL.frame = null; dlStopPoll(); } activeTab = tab; persistTab(tab); renderNav(); renderMain(); }
 
 /* ============ TEACHERS (admin) ============ */
 function renderTeachers(){
@@ -5685,14 +5706,218 @@ async function saveSettings(){
 function roomNameFor(teacherId){
   return 'AkademiyaPushkina-' + teacherId.replace(/[^a-zA-Z0-9]/g,'').slice(0,24);
 }
+/* ============ DAILY.CO: SAYT ICHIDA VIDEO DARS + MEHMON REJIMI ============ */
+const DL = {avail:null, frame:null, err:'', busy:false, ol:{room:'',checked:false,err:'',busy:false}, poll:null};
+function dlEsc(x){ return String(x==null?'':x).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+async function dlPing(){ if(DL.avail!==null) return DL.avail; try{ const r = await fetch('/api/daily/ping'); DL.avail = r.ok; }catch(e){ DL.avail = false; } return DL.avail; }
+async function dlPost(path, body){
+  let r, d = {};
+  try{ r = await fetch('/api/daily/'+path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body||{})}); }
+  catch(e){ throw new Error("Internetga ulanib bo'lmadi. Aloqani tekshirib, qayta urinib ko'ring."); }
+  try{ d = await r.json(); }catch(e){}
+  if(!r.ok || !d.ok) throw new Error(d.error || 'Xatolik yuz berdi. Qayta urinib ko\'ring.');
+  return d;
+}
+function dlStopPoll(){ if(DL.poll){ clearInterval(DL.poll); DL.poll = null; } }
+function dlLeave(){ dlStopPoll(); DL.frame = null; DL.err = ''; renderMain(); }
+function dlFrameHtml(title, endedMsg){
+  const f = DL.frame; if(!f) return '';
+  const src = f.url + (f.url.includes('?')?'&':'?') + 't=' + encodeURIComponent(f.token);
+  return `<div class="card dl-card">
+    <div class="dl-bar"><b>${dlEsc(title||'Dars xonasi')}</b><button class="btn sm danger" onclick="dlLeave()">Darsdan chiqish</button></div>
+    ${f.ended ? `<div class="empty" style="padding:60px 10px;">${dlEsc(endedMsg||'Dars yakunlandi.')}</div>` :
+    `<iframe class="dl-iframe" src="${src}" allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write"></iframe>
+    <div class="hint" style="margin:8px 4px 2px;">Brauzer kamera/mikrofonga ruxsat so'rasa, "Ruxsat berish" ni bosing. Ovoz yo'q bo'lsa pastdagi mikrofon tugmasini bosing.</div>`}
+  </div>`;
+}
+function dlStartPoll(url){
+  dlStopPoll();
+  DL.poll = setInterval(async ()=>{
+    if(!DL.frame || DL.frame.ended){ dlStopPoll(); return; }
+    try{
+      const r = await fetch(url);
+      if(r.status===404){ DL.frame.ended = true; dlStopPoll(); if(GUEST_MODE) guestVideoRender(); else renderMain(); }
+    }catch(e){}
+  }, 15000);
+}
+/* --- Ustoz: oddiy (guruh) dars --- */
+async function dlTeacherOpen(teacherId){
+  const u = curUser(); DL.err = ''; DL.busy = true; renderMain();
+  try{
+    const d = await dlPost('class', {userId:u.id, teacherId, name:u.name});
+    DL.frame = {url:d.url, token:d.token, kind:'class'};
+  }catch(e){ DL.err = e.message; }
+  DL.busy = false; renderMain();
+}
+async function dlStudentJoin(teacherId){
+  const u = curUser(); DL.err = ''; DL.busy = true; renderMain();
+  try{
+    const d = await dlPost('classjoin', {teacherId, name:u.name});
+    DL.frame = {url:d.url, token:d.token, kind:'class'};
+    dlStartPoll('/api/daily/classstatus/'+encodeURIComponent(teacherId));
+  }catch(e){ DL.err = e.message; }
+  DL.busy = false; renderMain();
+}
+/* --- Ustoz/admin: ochiq (ko'rgazma) dars --- */
+function olKey(){ const u = curUser(); return 'ol_'+(u?u.id:''); }
+async function olRestore(){
+  const ol = DL.ol; if(ol.checked) return; ol.checked = true;
+  let room = ''; try{ room = localStorage.getItem(olKey())||''; }catch(e){}
+  if(!room) return;
+  try{ const r = await fetch('/api/daily/room/'+encodeURIComponent(room)); if(r.ok){ ol.room = room; } else { localStorage.removeItem(olKey()); } }catch(e){}
+  if(activeTab==='live-class' && !DL.frame) renderMain();
+}
+async function olStart(){
+  const u = curUser(), ol = DL.ol; ol.err = ''; ol.busy = true; renderMain();
+  try{
+    const d = await dlPost('start', {userId:u.id, name:u.name});
+    ol.room = d.room; try{ localStorage.setItem(olKey(), d.room); }catch(e){}
+  }catch(e){ ol.err = e.message; }
+  ol.busy = false; renderMain();
+}
+async function olOpen(){
+  const u = curUser(), ol = DL.ol; ol.err = ''; ol.busy = true; renderMain();
+  try{
+    const d = await dlPost('owner', {userId:u.id, room:ol.room, name:u.name});
+    DL.frame = {url:d.url, token:d.token, kind:'open'};
+  }catch(e){ ol.err = e.message; if(/topilmadi|tugagan/.test(e.message)){ ol.room=''; try{ localStorage.removeItem(olKey()); }catch(_){} } }
+  ol.busy = false; renderMain();
+}
+async function olEnd(){
+  if(!confirm("Ochiq darsni tugatamizmi? Barcha qatnashuvchilar darsdan chiqariladi va link ishlamay qoladi.")) return;
+  const u = curUser(), ol = DL.ol; ol.busy = true; renderMain();
+  try{ await dlPost('end', {userId:u.id, room:ol.room}); }catch(e){}
+  ol.room = ''; ol.busy = false; DL.frame = null; try{ localStorage.removeItem(olKey()); }catch(e){}
+  renderMain();
+}
+function olLink(){ return location.origin + '/?dars=' + DL.ol.room; }
+function olCopy(){
+  const link = olLink();
+  const done = ()=>{ const b = document.getElementById('ol-copy'); if(b){ b.textContent = 'Nusxalandi ✓'; setTimeout(()=>{ if(b) b.textContent = 'Linkni nusxalash'; }, 2000); } };
+  try{ navigator.clipboard.writeText(link).then(done, ()=>{ prompt('Linkni nusxalang:', link); }); }catch(e){ prompt('Linkni nusxalang:', link); }
+}
+function olShare(){ window.open('https://t.me/share/url?url='+encodeURIComponent(olLink())+'&text='+encodeURIComponent("Akademiya Pushkina — ochiq dars. Qo'shilish uchun linkni bosing:"), '_blank'); }
+function openLessonCardHtml(){
+  if(DL.avail===false) return `<div class="card"><h3>Ochiq (ko'rgazma) dars</h3><div class="hint">Bu imkoniyat hali yoqilmagan. Sayt egasi Railway sozlamalariga <b>DAILY_API_KEY</b> qo'shishi kerak.</div></div>`;
+  const ol = DL.ol;
+  const err = ol.err ? `<div class="err" style="margin-top:10px;">${dlEsc(ol.err)}</div>` : '';
+  if(ol.busy) return `<div class="card"><h3>Ochiq (ko'rgazma) dars</h3><div class="empty">Yuklanmoqda…</div></div>`;
+  if(!ol.room) return `<div class="card"><h3>Ochiq (ko'rgazma) dars</h3>
+    <p style="color:var(--text-dim);font-size:13.5px;margin-bottom:12px;">Ro'yxatdan o'tmasdan, ilova yuklamasdan faqat link orqali qo'shiladigan dars. Qatnashuvchilar ismini yozib kiradi, dars paytida faqat "Mashqlar" bo'limini ko'radi.</p>
+    <button class="btn gold" onclick="olStart()">Ochiq dars yaratish</button>${err}</div>`;
+  return `<div class="card"><h3>Ochiq (ko'rgazma) dars</h3>
+    <label style="margin-top:0;">Qatnashuvchilarga yuboriladigan link</label>
+    <input type="text" readonly value="${dlEsc(olLink())}" onclick="this.select()">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+      <button class="btn outline" id="ol-copy" onclick="olCopy()">Linkni nusxalash</button>
+      <button class="btn outline" onclick="olShare()">Telegramga yuborish</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
+      <button class="btn gold" onclick="olOpen()">Darsni boshlash (kamera yoqiladi)</button>
+      <button class="btn danger" onclick="olEnd()">Darsni tugatish</button>
+    </div>
+    <div class="hint">Link darsni tugatguningizcha yoki 4 soatdan keyin ishlamay qoladi. Avval siz darsga kiring, keyin linkni yuboring.</div>${err}</div>`;
+}
+/* --- Mehmon rejimi (?dars=kod) --- */
+let GUEST_MODE = false, GUEST_USER = null;
+const GS = {room:'', state:'loading', name:'', tab:'video', err:'', busy:false};
+function guestId(){ let id=''; try{ id = localStorage.getItem('guest_id')||''; if(!id){ id='guest_'+Math.random().toString(36).slice(2,10); localStorage.setItem('guest_id', id); } }catch(e){} return id || ('guest_'+Date.now()); }
+async function startGuest(room){
+  GUEST_MODE = true; GUEST_USER = {id:guestId(), role:'student', name:'Mehmon'};
+  GS.room = room; try{ GS.name = localStorage.getItem('guest_name')||''; }catch(e){}
+  document.getElementById('landing-screen').classList.add('hide');
+  document.getElementById('login-screen').classList.remove('show');
+  const sf = document.getElementById('social-float'); if(sf) sf.style.display = 'none';
+  document.getElementById('guest-screen').classList.add('show');
+  guestShell();
+  const bl = document.getElementById('boot-loader'); if(bl) bl.remove();
+  try{ DB.practiceItems = await fetchTable('practice_items'); }catch(e){ DB.practiceItems = []; }
+  try{ const r = await fetch('/api/daily/room/'+encodeURIComponent(room)); GS.state = r.ok ? 'name' : (r.status===503 ? 'off' : 'gone'); }
+  catch(e){ GS.state = 'neterr'; }
+  guestVideoRender(); guestTabs();
+}
+function guestShell(){
+  document.getElementById('guest-screen').innerHTML = `
+    <div class="g-head"><div style="display:flex;align-items:center;gap:10px;"><img src="icon-192.png" alt="" style="width:40px;height:40px;border-radius:12px;"><div><div style="font-weight:700;">Akademiya Pushkina</div><div style="font-size:12.5px;color:var(--text-dim);">Ochiq dars</div></div></div></div>
+    <div class="g-tabs" id="g-tabs"></div>
+    <div id="g-video-wrap" class="g-big"></div>
+    <div id="g-main" style="display:none;"></div>`;
+}
+function guestTabs(){
+  const t = document.getElementById('g-tabs'); if(!t) return;
+  t.innerHTML = `<div class="g-tab ${GS.tab==='video'?'on':''}" onclick="guestTab('video')">🎥 Dars</div><div class="g-tab ${GS.tab==='practice'?'on':''}" onclick="guestTab('practice')">🧩 Mashqlar</div>`;
+  const w = document.getElementById('g-video-wrap'), m = document.getElementById('g-main');
+  const joined = GS.state==='live';
+  if(GS.tab==='video'){ w.className = 'g-big'; w.style.display = ''; m.style.display = 'none'; }
+  else{ m.style.display = ''; w.className = joined ? 'g-mini' : 'g-big'; w.style.display = joined ? '' : 'none'; renderMain(); }
+}
+function guestTab(tab){ GS.tab = tab; guestTabs(); }
+function guestVideoRender(){
+  const w = document.getElementById('g-video-wrap'); if(!w) return;
+  const msg = (t, sub)=>`<div class="card" style="text-align:center;padding:36px 18px;"><div style="font-size:18px;font-weight:700;margin-bottom:8px;">${t}</div><div style="color:var(--text-dim);font-size:14px;">${sub||''}</div></div>`;
+  if(GS.state==='loading'){ w.innerHTML = msg('Yuklanmoqda…',''); return; }
+  if(GS.state==='gone'){ w.innerHTML = msg('Dars topilmadi yoki tugagan', "Link eskirgan bo'lishi mumkin. \"Mashqlar\" bo'limidan foydalanishingiz mumkin."); return; }
+  if(GS.state==='off'){ w.innerHTML = msg('Dars hozircha mavjud emas', "Keyinroq urinib ko'ring yoki \"Mashqlar\" bo'limiga o'ting."); return; }
+  if(GS.state==='neterr'){ w.innerHTML = msg('Internetga ulanib bo\'lmadi', `<button class="btn gold" style="margin-top:12px;" onclick="location.reload()">Qayta urinish</button>`); return; }
+  if(GS.state==='ended'){ w.innerHTML = msg('Dars yakunlandi. Rahmat!', "\"Mashqlar\" bo'limida so'zlarni mashq qilishni davom ettirishingiz mumkin."); return; }
+  if(GS.state==='name'){
+    w.innerHTML = `<div class="card" style="max-width:460px;margin:0 auto;">
+      <h3>Darsga qo'shilish</h3>
+      <p style="color:var(--text-dim);font-size:13.5px;margin-bottom:6px;">Ro'yxatdan o'tish yoki ilova yuklash shart emas. Ismingizni yozing va qo'shiling.</p>
+      <label>Ismingiz</label><input type="text" id="g-name" maxlength="40" placeholder="masalan: Dilnoza" value="${dlEsc(GS.name)}" onkeydown="if(event.key==='Enter')guestJoin()">
+      <button class="btn gold" style="width:100%;margin-top:16px;" id="g-join" onclick="guestJoin()">Darsga qo'shilish</button>
+      <div class="err" id="g-err">${dlEsc(GS.err)}</div>
+      <div class="hint">Qo'shilganingizda brauzer kamera va mikrofonga ruxsat so'raydi, "Ruxsat berish" ni bosing. Mikrofon boshida o'chiq turadi.</div>
+    </div>`;
+    return;
+  }
+  if(GS.state==='live'){
+    const f = DL.frame;
+    if(!f){ w.innerHTML = ''; return; }
+    const src = f.url + (f.url.includes('?')?'&':'?') + 't=' + encodeURIComponent(f.token);
+    if(f.ended){ GS.state = 'ended'; DL.frame = null; guestVideoRender(); guestTabs(); return; }
+    if(!w.querySelector('iframe')){
+      w.innerHTML = `<iframe class="g-iframe" src="${src}" allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write"></iframe><button class="g-expand" onclick="guestTab('video')" title="Kattalashtirish">⤢</button>`;
+    }
+  }
+}
+async function guestJoin(){
+  if(GS.busy) return;
+  const inp = document.getElementById('g-name'); const name = (inp?inp.value:'').trim();
+  if(!name){ GS.err = 'Ismingizni kiriting.'; guestVideoRender(); return; }
+  GS.busy = true; GS.err = ''; GS.name = name; try{ localStorage.setItem('guest_name', name); }catch(e){}
+  const b = document.getElementById('g-join'); if(b){ b.disabled = true; b.textContent = 'Ulanmoqda…'; }
+  try{
+    const d = await dlPost('join', {room:GS.room, name});
+    DL.frame = {url:d.url, token:d.token, kind:'guest'};
+    GS.state = 'live';
+    dlStartPoll('/api/daily/room/'+encodeURIComponent(GS.room));
+    guestVideoRender(); guestTabs();
+  }catch(e){
+    GS.err = e.message; if(/topilmadi|tugagan/.test(e.message)) GS.state = 'gone';
+    guestVideoRender();
+  }
+  GS.busy = false;
+}
+
+function liveJoin(url){ window.open(url,'_blank'); }
 function renderLiveClass(u){
+  if(DL.avail===null){ dlPing().then(()=>{ if(activeTab==='live-class' && !DL.frame) renderMain(); }); }
+  if(u.role!=='student' && !DL.ol.checked && DL.avail!==false){ olRestore(); }
+  const head = (p)=>`<div class="topbar"><div><h1>${t(u.role==='admin'?'Onlayn darslar':'Onlayn dars')}</h1><p>${p||''}</p></div></div>`;
+  if(DL.frame){
+    if(DL.frame.kind==='open') return head("Ochiq dars") + dlFrameHtml('Ochiq dars', 'Dars yakunlandi.');
+    return head('') + dlFrameHtml('Dars xonasi', "O'qituvchi darsni tugatdi.");
+  }
+  const dErr = DL.err ? `<div class="err" style="margin:10px 4px 0;">${dlEsc(DL.err)}</div>` : '';
+  const dailyOn = DL.avail!==false;
   if(u.role==='teacher'){
     const myT = DB.teachers.find(x=>x.userId===u.id);
     if(!myT) return `<div class="empty">Ma'lumot topilmadi</div>`;
     const room = roomNameFor(myT.id);
     const roomUrl = `https://meet.jit.si/${room}#config.prejoinPageEnabled=false`;
     return `
-      <div class="topbar"><div><h1>${t('Onlayn dars')}</h1><p>${myT.isLive ? 'Efir hozir FAOL — o\'quvchilaringiz qo\'shila oladi' : 'Efir hozircha o\'chirilgan'}</p></div></div>
+      ${head(myT.isLive ? 'Efir hozir FAOL — o\'quvchilaringiz qo\'shila oladi' : 'Efir hozircha o\'chirilgan')}
       <div class="card">
         ${myT.isLive
           ? `<button class="btn danger" onclick="toggleLive('${myT.id}', false)">Efirni tugatish</button>`
@@ -5701,23 +5926,31 @@ function renderLiveClass(u){
       </div>
       ${myT.isLive ? `
       <div class="card">
-        <p style="margin-bottom:12px;">Kamera va mikrofon to'g'ri ishlashi uchun, dars xonasini <b>alohida to'liq oynada</b> oching:</p>
-        <button class="btn gold" onclick="window.open('${roomUrl}','_blank')">Dars xonasini ochish ↗</button>
+        ${dailyOn
+          ? `<p style="margin-bottom:12px;">Dars xonasi shu sahifaning o'zida ochiladi, saytdan chiqmaysiz.</p>
+             <button class="btn gold" ${DL.busy?'disabled':''} onclick="dlTeacherOpen('${myT.id}')">${DL.busy?'Ulanmoqda…':'Darsni boshlash (kamera yoqiladi)'}</button>`
+          : `<p style="margin-bottom:12px;">Kamera va mikrofon to'g'ri ishlashi uchun, dars xonasini <b>alohida to'liq oynada</b> oching:</p>
+             <button class="btn gold" onclick="liveJoin('${roomUrl}')">Dars xonasini ochish ↗</button>`}
+        ${dErr}
       </div>` : ''}
-      <div class="hint">Efirni boshlaganingizda, sizga biriktirilgan barcha o'quvchilar "Onlayn dars" bo'limida "Qo'shilish" tugmasini ko'radi. Kamera/mikrofon ishlamasa: telefon sozlamalarida brauzeringizga (Safari/Chrome) kamera va mikrofonga ruxsat berilganini tekshiring.</div>`;
+      ${openLessonCardHtml()}
+      <div class="hint">Efirni boshlaganingizda, sizga biriktirilgan barcha o'quvchilar "Onlayn dars" bo'limida "Qo'shilish" tugmasini ko'radi. Kamera/mikrofon ishlamasa: brauzer sozlamalarida kamera va mikrofonga ruxsat berilganini tekshiring.</div>`;
   }
   if(u.role==='student'){
     const s = DB.students.find(x=>x.userId===u.id);
     const theirT = s ? DB.teachers.find(x=>x.id===s.teacherId) : null;
-    if(!theirT) return `<div class="topbar"><div><h1>${t('Onlayn dars')}</h1></div></div><div class="empty">O'qituvchi biriktirilmagan</div>`;
+    if(!theirT) return head('') + `<div class="empty">O'qituvchi biriktirilmagan</div>`;
     const room = roomNameFor(theirT.id);
     const roomUrl = `https://meet.jit.si/${room}#config.prejoinPageEnabled=false`;
     return `
-      <div class="topbar"><div><h1>${t('Onlayn dars')}</h1><p>${teacherName(theirT.id)}</p></div></div>
+      ${head(teacherName(theirT.id))}
       ${theirT.isLive
         ? `<div class="card">
             <p style="margin-bottom:12px;">O'qituvchingiz efirni boshladi.</p>
-            <button class="btn gold" onclick="window.open('${roomUrl}','_blank')">Darsga qo'shilish ↗</button>
+            ${dailyOn
+              ? `<button class="btn gold" ${DL.busy?'disabled':''} onclick="dlStudentJoin('${theirT.id}')">${DL.busy?'Ulanmoqda…':"Darsga qo'shilish"}</button>`
+              : `<button class="btn gold" onclick="liveJoin('${roomUrl}')">Darsga qo'shilish ↗</button>`}
+            ${dErr}
           </div>`
         : `<div class="card"><div class="empty">Hozircha onlayn dars boshlanmagan. O'qituvchingiz efirni boshlaganda shu yerda avtomatik ko'rinadi.</div></div>`
       }`;
@@ -5728,7 +5961,8 @@ function renderLiveClass(u){
     return `<tr><td>${tu?tu.name:'—'}</td><td><span class="pill ${t.isLive?'green':'gray'}">${t.isLive?'Efirda':'O\'chirilgan'}</span></td></tr>`;
   }).join('');
   return `
-    <div class="topbar"><div><h1>${t('Onlayn darslar')}</h1><p>Barcha o'qituvchilarning efir holati</p></div></div>
+    ${head("Barcha o'qituvchilarning efir holati")}
+    ${openLessonCardHtml()}
     <div class="card">
       <table>
         <thead><tr><th>O'qituvchi</th><th>Holat</th></tr></thead>
@@ -5737,6 +5971,7 @@ function renderLiveClass(u){
     </div>`;
 }
 async function toggleLive(teacherId, isLive){
+  if(!isLive){ DL.frame = null; if(DL.avail){ try{ await dlPost('end', {userId:session.userId, teacherId}); }catch(e){} } }
   await updateRow('teachers', teacherId, {isLive});
   const t = DB.teachers.find(x=>x.id===teacherId);
   if(t) t.isLive = isLive;
