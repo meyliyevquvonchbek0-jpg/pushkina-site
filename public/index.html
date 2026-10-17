@@ -1134,7 +1134,7 @@ function qLang(q){ if(q.lang) return q.lang; const d = q.direction||''; return (
 function wheelQs(){ return DB.wheelQuestions.filter(q=>qLang(q)===wheelState.lang); }
 function wheelSetLang(l){ wheelState.lang=l; wheelState.level='all'; wheelState.dir='all'; wheelState.topics=[]; wheelNewRound(); renderMain(); }
 const WHEEL_COLORS = ['#1B2540','#C9A227','#2A7F8E','#C1524B','#3B7A57','#6A4C93'];
-let wheelState = {lang:'ru', big:false, level:'all', topics:[], dir:'all', round:[], used:[], rot:0, spinning:false, current:null, showAnswer:false, ok:0, bad:0, sound:true, manage:false, mLevel:'A1', built:false, teamCount:0, teamScores:[0,0,0,0], turn:0};
+let wheelState = {lang:'ru', talk:true, big:false, level:'all', topics:[], dir:'all', round:[], used:[], rot:0, spinning:false, current:null, showAnswer:false, ok:0, bad:0, sound:true, manage:false, mLevel:'A1', built:false, teamCount:0, teamScores:[0,0,0,0], turn:0};
 function wEsc(x){ return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function wheelPool(){
   return DB.wheelQuestions.filter(q=>qLang(q)===wheelState.lang && (wheelState.level==='all' || q.level===wheelState.level) && (wheelState.dir==='all' || q.direction===wheelState.dir) && (!wheelState.topics.length || wheelState.topics.includes(q.topic)));
@@ -1197,7 +1197,7 @@ function renderWheel(u){
       <div>${left}</div>
       <div>
         <div class="wh-panel">
-          <div style="font-size:12.5px;color:var(--text-dim);">Til</div><div class="wh-chips"><button class="wh-chip ${wheelState.lang==='ru'?'on':''}" onclick="wheelSetLang('ru')">🇷🇺 Rus tili</button><button class="wh-chip ${wheelState.lang==='en'?'on':''}" onclick="wheelSetLang('en')">🇬🇧 Ingliz tili</button></div>
+          <div style="font-size:12.5px;color:var(--text-dim);">Til</div><div class="wh-chips"><button class="wh-chip ${wheelState.lang==='ru'?'on':''}" onclick="wheelSetLang('ru')">🇷🇺 Rus tili</button><button class="wh-chip ${wheelState.lang==='en'?'on':''}" onclick="wheelSetLang('en')">🇬🇧 Ingliz tili</button>${wheelState.lang==='en'?`<button class="wh-chip ${wheelState.talk?'on':''}" onclick="wheelToggleTalk()" title="So'z chiqqanda avtomatik o'qiladi">🗣 Talaffuz: ${wheelState.talk?'yoqilgan':'o\'chiq'}</button>`:''}</div>
           <div style="font-size:12.5px;color:var(--text-dim);">Daraja</div><div class="wh-chips">${levelChips}</div>
           <div style="font-size:12.5px;color:var(--text-dim);">Savol turi</div><div class="wh-chips">${dirChips}</div>
           ${wheelTopicsHtml()}
@@ -1254,9 +1254,9 @@ function wheelResultHtml(){
   return `<div class="wh-q"><span class="num">${idx+1}</span><br>
       <span class="tag">${wEsc(WHEEL_DIRS[q.direction]||'Savol')}</span>
       <div class="hint">${wEsc(instr)}</div>
-      <div class="text">${wEsc(q.question)} ${vSpeakBtn(q.question)}</div></div>
+      <div class="text">${wEsc(q.question)} ${qLang(q)==='en'?wheelSpeakBtn(wheelEn(q,'q')):vSpeakBtn(q.question)}</div></div>
     ${wheelState.showAnswer
-      ? `<div class="wh-ans"><small>To'g'ri javob</small>${wEsc(q.answer)} ${vSpeakBtn(q.answer)}</div>
+      ? `<div class="wh-ans"><small>To'g'ri javob</small>${wEsc(q.answer)} ${qLang(q)==='en'?wheelSpeakBtn(wheelEn(q,'a')):vSpeakBtn(q.answer)}</div>
          <div style="display:flex;gap:10px;margin-top:12px;"><button class="btn gold" style="flex:1;" onclick="wheelMark(true)">✓ To'g'ri javob berdi</button><button class="btn danger" style="flex:1;" onclick="wheelMark(false)">✗ Xato / bilmadi</button></div>`
       : `<button class="btn gold" style="width:100%;margin-top:12px;padding:13px;font-size:16px;" onclick="wheelReveal()">👁 Javobni ko'rsatish</button>`}`;
 }
@@ -1300,7 +1300,7 @@ function wheelTopicsUpTo(name){
 function wheelSetLevel(l){ wheelState.level=l; wheelNewRound(); renderMain(); }
 function wheelSetDir(d){ wheelState.dir=d; wheelNewRound(); renderMain(); }
 function wheelRestart(){ if(wheelState.spinning) return; wheelNewRound(); renderMain(); }
-function wheelReveal(){ wheelState.showAnswer=true; document.getElementById('wh-result').innerHTML = wheelResultHtml(); }
+function wheelReveal(){ wheelState.showAnswer=true; document.getElementById('wh-result').innerHTML = wheelResultHtml(); wheelAutoSpeak('a'); }
 function wheelSetTeams(n){ wheelState.teamCount=n; wheelState.teamScores=[0,0,0,0]; wheelState.turn=0; renderMain(); }
 const WH_TEAM_NAMES=['🔴 Qizil','🔵 Ko\'k','🟢 Yashil','🟡 Sariq'];
 function wheelTeamBoard(){
@@ -1369,7 +1369,7 @@ function wheelSpin(){
     else{
       wheelState.rot = start+delta; wheelState.spinning=false;
       wheelState.used.push(k); wheelState.current = wheelState.round[k];
-      wheelSound('stop'); renderMain();
+      wheelSound('stop'); renderMain(); wheelAutoSpeak('q');
     }
   }
   requestAnimationFrame(frame);
@@ -1446,9 +1446,33 @@ function vIsCyr(t){ return /[А-Яа-яЁё]/.test(t||''); }
 function vSpeakEl(el){
   try{
     const t = el.getAttribute('data-t'); if(!t || !('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'ru-RU'; u.rate = 0.85; window.speechSynthesis.speak(u);
+    window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = el.getAttribute('data-l') || 'ru-RU'; u.rate = 0.85; try{ const vs = window.speechSynthesis.getVoices(); const lp = u.lang.slice(0,2).toLowerCase(); const vv = vs.find(x=>x.lang===u.lang) || vs.find(x=>x.lang.slice(0,2).toLowerCase()===lp); if(vv) u.voice = vv; }catch(_){} window.speechSynthesis.speak(u);
   }catch(e){}
 }
+
+function enSpeak(text){
+  try{
+    if(!text || !('speechSynthesis' in window)) return;
+    const u = new SpeechSynthesisUtterance(String(text).replace(/\s*\(yoki:.*$/,'').replace(/\s*\([^)]*\)\s*$/,'').trim());
+    u.lang = 'en-US'; u.rate = 0.85;
+    const vs = window.speechSynthesis.getVoices(); const vv = vs.find(x=>x.lang==='en-US') || vs.find(x=>/^en/i.test(x.lang)); if(vv) u.voice = vv;
+    window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+function wheelEn(q, side){
+  if(!q || qLang(q)!=='en') return '';
+  const d = q.direction, h = q.hint||'';
+  if(d==='en-uz') return side==='q' ? q.question : '';
+  if(d==='uz-en') return side==='a' ? q.answer : '';
+  if(side==='q') return (/___|Tarjima/.test(q.question+' '+h) || /^\(/.test(q.question) || !/[A-Za-z]/.test(q.question)) ? '' : q.question;
+  const a = String(q.answer||'');
+  return (/ question$/.test(a) || / \/ /.test(a) || a.split(/\s+/).length<3 && !/[A-Za-z]{3,}/.test(a)) ? '' : a;
+}
+function wheelSpeakBtn(text){ return text ? `<button type="button" class="vc-speak" data-t="${wEsc(text)}" data-l="en-US" onclick="vSpeakEl(this)" title="Talaffuz">🔊</button>` : ''; }
+function wheelAutoSpeak(side){
+  try{ if(wheelState.lang!=='en' || !wheelState.talk) return; const t = wheelEn(wheelState.current, side); if(t) setTimeout(()=>enSpeak(t), 250); }catch(e){}
+}
+function wheelToggleTalk(){ wheelState.talk = !wheelState.talk; renderMain(); }
 function vSpeakBtn(text){ return vIsCyr(text) ? `<button type="button" class="vc-speak" data-t="${wEsc(text)}" onclick="vSpeakEl(this)" title="Talaffuz">🔊</button>` : ''; }
 async function vocabFetch(table, studentId){
   const all = [];
