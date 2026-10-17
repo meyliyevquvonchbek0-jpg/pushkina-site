@@ -689,6 +689,10 @@
   #g-video-wrap.g-mini{height:auto;aspect-ratio:16/9;width:300px;}
 
   .va-bar{position:sticky;top:0;z-index:50;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:#2A1F5E;color:#fff;padding:10px 14px;border-radius:12px;margin-bottom:14px;font-size:13.5px;}
+
+  #g-video-wrap.g-big{position:relative;}
+  .g-full{display:block;margin:8px 0 0 auto;border:0;border-radius:10px;padding:8px 14px;background:#2A1F5E;color:#fff;font-weight:600;font-size:13.5px;cursor:pointer;}
+  #g-video-wrap.g-mini .g-full{display:none;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
@@ -5843,13 +5847,14 @@ async function dlPost(path, body){
   if(!r.ok || !d.ok) throw new Error(d.error || 'Xatolik yuz berdi. Qayta urinib ko\'ring.');
   return d;
 }
+function fsOpen(sel){ const el = document.querySelector(sel); if(!el) return; const f = el.querySelector('iframe') || el; try{ (f.requestFullscreen||f.webkitRequestFullscreen||el.requestFullscreen).call(f.requestFullscreen?f:el); }catch(e){ try{ el.requestFullscreen(); }catch(_){} } }
 function dlStopPoll(){ if(DL.poll){ clearInterval(DL.poll); DL.poll = null; } }
 function dlLeave(){ dlStopPoll(); DL.frame = null; DL.err = ''; renderMain(); }
 function dlFrameHtml(title, endedMsg){
   const f = DL.frame; if(!f) return '';
   const src = f.url + (f.url.includes('?')?'&':'?') + 't=' + encodeURIComponent(f.token);
   return `<div class="card dl-card">
-    <div class="dl-bar"><b>${dlEsc(title||'Dars xonasi')}</b><button class="btn sm danger" onclick="dlLeave()">Darsdan chiqish</button></div>
+    <div class="dl-bar"><b>${dlEsc(title||'Dars xonasi')}</b><span style="display:flex;gap:8px;"><button class="btn sm outline" onclick="fsOpen('.dl-iframe')">⛶ Butun ekran</button><button class="btn sm danger" onclick="dlLeave()">Darsdan chiqish</button></span></div>
     ${f.ended ? `<div class="empty" style="padding:60px 10px;">${dlEsc(endedMsg||'Dars yakunlandi.')}</div>` :
     `<iframe class="dl-iframe" src="${src}" allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write"></iframe>
     <div class="hint" style="margin:8px 4px 2px;">Brauzer kamera/mikrofonga ruxsat so'rasa, "Ruxsat berish" ni bosing. Ovoz yo'q bo'lsa pastdagi mikrofon tugmasini bosing.</div>`}
@@ -6049,7 +6054,7 @@ function guestTab(tab){ GS.tab = tab; guestTabs(); }
 function guestVideoRender(){
   const w = document.getElementById('g-video-wrap'); if(!w) return;
   if(GS.mode==='yt'){
-    if(!w.querySelector('iframe')) w.innerHTML = ytIframe(GS.p, 'g-iframe') + `<button class="g-expand" onclick="guestTab('video')" title="Kattalashtirish">⤢</button><div class="g-note">Efir hali boshlanmagan bo'lsa, ustoz boshlaguncha kuting va sahifani yangilang. Ovoz yo'q bo'lsa, videodagi ovoz tugmasini bosing.</div>`;
+    if(!w.querySelector('iframe')) w.innerHTML = ytIframe(GS.p, 'g-iframe') + `<button class="g-expand" onclick="guestTab('video')" title="Kattalashtirish">⤢</button><button class="g-full" onclick="fsOpen('#g-video-wrap')" title="Butun ekran">⛶ Butun ekran</button><div class="g-note">Efir hali boshlanmagan bo'lsa, ustoz boshlaguncha kuting va sahifani yangilang. Ovoz yo'q bo'lsa, videodagi ovoz tugmasini bosing.</div>`;
     return;
   }
   const msg = (t, sub)=>`<div class="card" style="text-align:center;padding:36px 18px;"><div style="font-size:18px;font-weight:700;margin-bottom:8px;">${t}</div><div style="color:var(--text-dim);font-size:14px;">${sub||''}</div></div>`;
@@ -6075,7 +6080,7 @@ function guestVideoRender(){
     const src = f.url + (f.url.includes('?')?'&':'?') + 't=' + encodeURIComponent(f.token);
     if(f.ended){ GS.state = 'ended'; DL.frame = null; guestVideoRender(); guestTabs(); return; }
     if(!w.querySelector('iframe')){
-      w.innerHTML = `<iframe class="g-iframe" src="${src}" allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write"></iframe><button class="g-expand" onclick="guestTab('video')" title="Kattalashtirish">⤢</button>`;
+      w.innerHTML = `<iframe class="g-iframe" src="${src}" allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write" allowfullscreen></iframe><button class="g-expand" onclick="guestTab('video')" title="Kattalashtirish">⤢</button><button class="g-full" onclick="fsOpen('#g-video-wrap')" title="Butun ekran">⛶ Butun ekran</button>`;
     }
   }
 }
