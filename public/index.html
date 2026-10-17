@@ -678,6 +678,17 @@
   .g-expand{display:none;}
   #g-video-wrap.g-mini .g-expand{display:block;position:absolute;left:6px;top:6px;width:30px;height:30px;border:0;border-radius:9px;background:rgba(0,0,0,0.55);color:#fff;font-size:16px;cursor:pointer;z-index:2;}
   @media(max-width:600px){#g-video-wrap.g-mini{width:190px;height:125px;right:8px;bottom:8px;}}
+
+  .yt-wrap{position:relative;width:100%;max-width:760px;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:#111;}
+  .yt-iframe{position:absolute;inset:0;width:100%;height:100%;border:0;}
+  .g-note{margin:10px 4px 0;font-size:13px;color:var(--text-dim);}
+  #g-video-wrap.g-big{max-width:1000px;margin:0 auto;}
+  #g-video-wrap.g-big .g-iframe{aspect-ratio:16/9;height:auto;min-height:0;}
+  #g-video-wrap.g-mini .g-iframe{aspect-ratio:auto;}
+  #g-video-wrap.g-mini .g-note{display:none;}
+  #g-video-wrap.g-mini{height:auto;aspect-ratio:16/9;width:300px;}
+
+  .va-bar{position:sticky;top:0;z-index:50;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:#2A1F5E;color:#fff;padding:10px 14px;border-radius:12px;margin-bottom:14px;font-size:13.5px;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
@@ -857,6 +868,7 @@ function fromRow(table, row){
   for(const k in map) inv[map[k]] = k;
   const obj = {};
   for(const k in row) obj[inv[k] || k] = row[k];
+  if((table==='users'||table==='users_public') && obj.role==='owner'){ obj.role = 'admin'; obj.owner = true; }
   return obj;
 }
 async function fetchTable(table){
@@ -877,6 +889,7 @@ async function verifyLogin(username, password){
 }
 const USERS_SAFE_COLS = 'id,username,role,name,phone,status';
 async function insertRow(table, obj){
+  if(VIEW_AS) throw new Error("Ko'rish rejimida o'zgartirish mumkin emas.");
   if(table === 'users'){
     const {data, error} = await sb.from(table).insert(toRow(table, obj)).select(USERS_SAFE_COLS).single();
     if(error){ throw error; }
@@ -887,6 +900,8 @@ async function insertRow(table, obj){
   return fromRow(table, data);
 }
 async function updateRow(table, id, obj){
+  if(VIEW_AS) throw new Error("Ko'rish rejimida o'zgartirish mumkin emas.");
+  if(table==='users' && obj && 'role' in obj){ const tu = DB.users.find(x=>x.id===id); if(tu && tu.owner){ obj = Object.assign({}, obj); delete obj.role; } }
   if(table === 'users'){
     const {data, error} = await sb.from(table).update(toRow(table, obj)).eq('id', id).select(USERS_SAFE_COLS).single();
     if(error){ throw error; }
@@ -897,6 +912,7 @@ async function updateRow(table, id, obj){
   return fromRow(table, data);
 }
 async function deleteRow(table, id){
+  if(VIEW_AS) throw new Error("Ko'rish rejimida o'zgartirish mumkin emas.");
   const {error} = await sb.from(table).delete().eq('id', id);
   if(error){ throw error; }
 }
@@ -1955,7 +1971,7 @@ function bookWheelQuestions(){
 
 /* ============ BOOTSTRAP ============ */
 async function boot(){
-  try{ const gq = new URLSearchParams(location.search).get('dars'); if(gq && /^[a-z0-9-]{6,40}$/.test(gq)){ await Promise.resolve(); return startGuest(gq); } }catch(e){ console.error(e); }
+  try{ const qs = new URLSearchParams(location.search); const gq = qs.get('live'), gd = qs.get('dars'); const gp = gq ? ytParse(gq) : null; if(gp){ await Promise.resolve(); return startGuest({mode:'yt', p:gp}); } if(gd && /^[a-z0-9-]{6,40}$/.test(gd)){ await Promise.resolve(); return startGuest({mode:'daily', room:gd}); } }catch(e){ console.error(e); }
   try{
     const [
       users, teachers, students, schedule, attendance, payments, videos,
@@ -2005,6 +2021,7 @@ async function boot(){
         const user = DB.users.find(x=>x.id===parsed.userId);
         if(user && user.status!=='pending'){
           session = {userId:user.id, role:user.role};
+          VIEW_AS = null; hideOwnersIfNeeded(); loadFlags().then(()=>{ if(session){ renderNav(); renderMain(); } });
           document.getElementById('landing-screen').classList.add('hide');
           document.getElementById('login-screen').classList.remove('show');
           document.getElementById('app').classList.add('show');
@@ -2450,8 +2467,10 @@ async function handleLogin(){
     return;
   }
   errBox.textContent = '';
-  session = {userId:result.id, role:result.role};
+  session = {userId:result.id, role:(result.role==='owner'?'admin':result.role)};
   try{ localStorage.setItem('pushkina_session', JSON.stringify(session)); }catch(e){}
+  VIEW_AS = null; hideOwnersIfNeeded(); loadFlags().then(()=>{ if(session){ renderNav(); } });
+  try{ sb.rpc('log_login', {p_user: String(result.id), p_ua: (navigator.userAgent||'').slice(0,300)}).then(()=>{}, ()=>{}); }catch(e){}
   document.getElementById('landing-screen').classList.add('hide');
   document.getElementById('login-screen').classList.remove('show');
   document.getElementById('app').classList.add('show');
@@ -2461,14 +2480,14 @@ async function handleLogin(){
   try{ setupDuelPresenceAndInvites(); }catch(e){ console.error(e); }
 }
 function handleLogout(){
-  session = null;
+  session = null; VIEW_AS = null; TAB_HIDE = {};
   try{ localStorage.removeItem('pushkina_session'); }catch(e){}
   document.getElementById('app').classList.remove('show');
   showLanding();
   document.getElementById('login-username').value='';
   document.getElementById('login-password').value='';
 }
-function curUser(){ return DB.users.find(u=>u.id===session.userId); }
+function curUser(){ if(VIEW_AS){ const v = DB.users.find(u=>u.id===VIEW_AS); if(v) return v; VIEW_AS = null; } return DB.users.find(u=>u.id===session.userId); }
 
 /* ============ SAYTDA O'TKAZILGAN VAQT ============ */
 let _actAt = Date.now(), _pendingSec = 0, _flushing = false, _pendTab = {}, _flushingTab = false;
@@ -2979,7 +2998,6 @@ const NAV = {
     {id:'stats', label:'📊 Statistika', icon:'📊'},
     {id:'usage', label:'⏱️ Faollik', icon:'⏱️'},
     {id:'leads', label:'📨 Botdan arizalar', icon:'📨'},
-    {id:'bot-questions', label:'🤖 Bot savollari', icon:'🤖'},
     {id:'payments', label:'To\'lovlar', icon:'₪'},
     {id:'videos', label:'Video darslar', icon:'▶'},
     {id:'materials', label:'Materiallar', icon:'▤'},
@@ -3035,6 +3053,21 @@ const NAV = {
     {id:'translator', label:'Tarjimon', icon:'🌐'}
   ]
 };
+NAV.owner = NAV.admin.slice();
+NAV.owner.splice(NAV.owner.findIndex(x=>x.id==='leads')+1, 0, {id:'bot-questions', label:'🤖 Bot savollari', icon:'🤖'});
+NAV.owner.push({id:'owner-logins', label:'🔐 Kirish tarixi', icon:'🔐'}, {id:'owner-visibility', label:'👁 Bo\'limlar ko\'rinishi', icon:'👁'}, {id:'owner-viewas', label:'🧑‍💻 Foydalanuvchi ko\'zi bilan', icon:'🧑‍💻'});
+const OWNER_TABS = ['owner-logins','owner-visibility','owner-viewas','bot-questions'];
+let VIEW_AS = null, TAB_HIDE = {};
+function realUser(){ return DB.users.find(u=>u.id===session.userId); }
+function tabHiddenFor(u, tab){ return !!(u && !u.owner && tab!=='home' && (TAB_HIDE[tab]||[]).includes(u.role)); }
+function navFor(u){ return (u.owner ? NAV.owner : NAV[u.role]).filter(it=>!tabHiddenFor(u,it.id)); }
+async function loadFlags(){
+  try{ const {data,error} = await sb.rpc('get_flags'); if(error) return; const row = (data||[]).find(r=>r.key==='tabs_hidden'); TAB_HIDE = row && row.value ? JSON.parse(row.value) : {}; }catch(e){}
+}
+function hideOwnersIfNeeded(){
+  const me = realUser(); if(me && !me.owner) DB.users = DB.users.filter(x=>!x.owner);
+}
+
 function renderNotifBell(){
   const slot = document.getElementById('notif-bell-slot');
   if(!slot || !session) return;
@@ -3066,7 +3099,7 @@ function renderNav(){
   renderNotifBell();
   const list = document.getElementById('nav-list');
   list.innerHTML = '';
-  NAV[u.role].forEach(item=>{
+  navFor(u).forEach(item=>{
     const div = document.createElement('div');
     div.className = 'nav-item' + ((activeTab===item.id || (item.id==='games' && GAME_TABS.includes(activeTab))) ? ' active' : '');
     div.innerHTML = `<span>${item.icon}</span><span>${t(item.label)}</span>`;
@@ -3074,7 +3107,7 @@ function renderNav(){
     list.appendChild(div);
   });
   document.getElementById('cur-user-name').textContent = u.name;
-  const roleLabel = {admin:'Administrator', teacher:'O\'qituvchi', student:'O\'quvchi'}[u.role];
+  const roleLabel = u.owner ? 'Bosh admin' : {admin:'Administrator', teacher:'O\'qituvchi', student:'O\'quvchi'}[u.role];
   document.getElementById('cur-user-role').textContent = t(roleLabel);
 }
 
@@ -3084,6 +3117,8 @@ function renderMain(){
   const u = curUser();
   const el = document.getElementById('main-content');
   let html = '';
+  if(OWNER_TABS.includes(activeTab) && !(realUser()&&realUser().owner && !VIEW_AS) && !(activeTab==='bot-questions' && u.owner)){ activeTab = 'home'; }
+  if(tabHiddenFor(u, activeTab)){ activeTab = 'home'; }
   if(activeTab==='home') html = renderHome(u);
   else if(activeTab==='teachers') html = renderTeachers();
   else if(activeTab==='students') html = renderStudents();
@@ -3110,6 +3145,9 @@ function renderMain(){
   else if(activeTab==='stats') html = renderStatsDashboard();
   else if(activeTab==='usage') html = renderUsage();
   else if(activeTab==='bot-questions') html = renderBotQuestions();
+  else if(activeTab==='owner-logins') html = renderOwnerLogins();
+  else if(activeTab==='owner-visibility') html = renderOwnerVisibility();
+  else if(activeTab==='owner-viewas') html = renderOwnerViewAs();
   else if(activeTab==='leads') html = renderLeads();
   else if(activeTab==='flashcards') html = renderFlashcards(u);
   else if(activeTab==='teacher-info') html = renderTeacherInfo(u);
@@ -3133,7 +3171,94 @@ function renderMain(){
   else if(activeTab==='reward-requests') html = renderRewardRequests();
   else if(activeTab==='reviews') html = renderReviews(u);
   if(GAME_TABS.includes(activeTab) && activeTab!=='games' && !(activeTab==='wheel' && wheelState.big)) html = `<div style="margin-bottom:12px;"><button class="btn sm outline" onclick="gamesBack()">← O'yinlar</button></div>` + html;
+  if(VIEW_AS) html = viewAsBar() + html;
   el.innerHTML = html;
+}
+
+
+/* ============ BOSH ADMIN (owner) ============ */
+function viewAsBar(){
+  const v = curUser(); if(!v) return '';
+  const rl = {admin:'Administrator', teacher:"O'qituvchi", student:"O'quvchi"}[v.role]||v.role;
+  return `<div class="va-bar"><span>👁 <b>${dlEsc(v.name)}</b> (${rl}) ko'zi bilan ko'ryapsiz. Faqat ko'rish rejimi: o'zgartirish saqlanmaydi.</span><button class="btn sm gold" onclick="viewAsExit()">Bosh adminga qaytish</button></div>`;
+}
+function viewAsStart(id){ VIEW_AS = id; activeTab = 'home'; renderNav(); renderMain(); window.scrollTo(0,0); }
+function viewAsExit(){ VIEW_AS = null; activeTab = 'owner-viewas'; renderNav(); renderMain(); }
+let viewAsQ = '', viewAsRole = 'student';
+function renderOwnerViewAs(){
+  const q = viewAsQ.trim().toLowerCase();
+  const list = DB.users.filter(u=>u.role===viewAsRole && u.status!=='pending' && !u.owner && (!q || (u.name||'').toLowerCase().includes(q) || (u.username||'').toLowerCase().includes(q)))
+    .sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  const rb = (k,l)=>`<button class="btn sm ${viewAsRole===k?'gold':'outline'}" onclick="viewAsRole='${k}';renderMain()">${l}</button>`;
+  return `<div class="topbar"><div><h1>🧑‍💻 Foydalanuvchi ko'zi bilan</h1><p>Tanlangan o'quvchi yoki o'qituvchi saytda nimani ko'rishini aynan o'zidek ko'ring. Hech narsa o'zgartirilmaydi.</p></div></div>
+  <div class="card" style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    ${rb('student',"O'quvchilar")}${rb('teacher',"O'qituvchilar")}${rb('admin','Administratorlar')}
+    <input type="text" placeholder="Ism yoki login bo'yicha qidirish" value="${dlEsc(viewAsQ)}" oninput="viewAsQ=this.value;renderMain();var e=document.querySelector('.va-search');" class="va-search" style="flex:1;min-width:200px;margin:0;">
+  </div>
+  <div class="card"><div style="overflow-x:auto;"><table><thead><tr><th>Ism</th><th>Login</th><th></th></tr></thead><tbody>
+  ${list.map(u=>`<tr><td>${dlEsc(u.name)}</td><td>${dlEsc(u.username)}</td><td><button class="btn sm gold" onclick="viewAsStart('${u.id}')">Ko'rish</button></td></tr>`).join('') || '<tr><td colspan="3" class="empty">Topilmadi</td></tr>'}
+  </tbody></table></div></div>`;
+}
+/* --- bo'limlar ko'rinishi --- */
+async function saveTabHide(){
+  const me = realUser();
+  const {error} = await sb.rpc('set_flag', {p_user:String(me.id), p_key:'tabs_hidden', p_value:JSON.stringify(TAB_HIDE)});
+  if(error){ alert("Saqlab bo'lmadi: "+(error.message||'xato')+"\nowner_profile.sql ishga tushirilganini tekshiring."); }
+}
+function toggleTabRole(tab, role, on){
+  const arr = (TAB_HIDE[tab]||[]).filter(r=>r!==role);
+  if(!on) arr.push(role);
+  if(arr.length) TAB_HIDE[tab] = arr; else delete TAB_HIDE[tab];
+  saveTabHide(); renderMain();
+}
+function renderOwnerVisibility(){
+  const roles = [['admin','Administrator'],['teacher',"O'qituvchi"],['student',"O'quvchi"]];
+  const ids = []; const seen = {};
+  ['admin','teacher','student'].forEach(r=>NAV[r].forEach(it=>{ if(!seen[it.id]){ seen[it.id]=1; ids.push(it); } }));
+  const rows = ids.map(it=>{
+    const has = r=>NAV[r].some(x=>x.id===it.id);
+    const vis = roles.filter(([r])=>has(r) && !(TAB_HIDE[it.id]||[]).includes(r)).map(([r,l])=>l);
+    const summary = vis.length===roles.filter(([r])=>has(r)).length ? 'Hammaga' : (vis.length ? 'Faqat: '+vis.join(', ') : 'Hech kimga');
+    const cells = roles.map(([r])=> !has(r) ? '<td style="text-align:center;color:var(--text-dim);">—</td>' :
+      `<td style="text-align:center;"><input type="checkbox" ${it.id==='home'?'disabled ':''}${(TAB_HIDE[it.id]||[]).includes(r)?'':'checked'} onchange="toggleTabRole('${it.id}','${r}',this.checked)" style="width:auto;margin:0;"></td>`).join('');
+    return `<tr><td>${dlEsc(String(it.label))}</td>${cells}<td style="font-size:12.5px;color:var(--text-dim);">${dlEsc(summary)}</td></tr>`;
+  }).join('');
+  return `<div class="topbar"><div><h1>👁 Bo'limlar ko'rinishi</h1><p>Qaysi bo'lim kimga ko'rinishini o'zingiz belgilang. Belgi olib tashlansa, o'sha rol uchun bo'lim menyudan yo'qoladi. Siz (Bosh admin) hammasini ko'rasiz. "Bot savollari" va ushbu uch sahifa faqat sizga ko'rinadi.</p></div></div>
+  <div class="card"><div style="overflow-x:auto;"><table><thead><tr><th>Bo'lim</th>${roles.map(([r,l])=>`<th style="text-align:center;">${l}</th>`).join('')}<th>Kimga ko'rinadi</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+/* --- kirish tarixi --- */
+let loginData = null, loginFilter = 'all';
+async function loadLogins(){
+  const me = realUser();
+  const {data, error} = await sb.rpc('login_history', {p_user:String(me.id), p_limit:500});
+  loginData = error ? {error: error.message||'xato'} : {rows: data||[]};
+  if(activeTab==='owner-logins') renderMain();
+}
+function uaShort(ua){
+  ua = ua||''; let dev = /iPad|Tablet/i.test(ua) ? 'Planshet' : /Mobi|Android|iPhone/i.test(ua) ? 'Telefon' : 'Kompyuter';
+  let os = /Windows/i.test(ua)?'Windows':/Android/i.test(ua)?'Android':/iPhone|iPad|iOS/i.test(ua)?'iOS':/Mac OS/i.test(ua)?'macOS':/Linux/i.test(ua)?'Linux':'';
+  let br = /Edg\//.test(ua)?'Edge':/OPR\//.test(ua)?'Opera':/Chrome\//.test(ua)?'Chrome':/Firefox\//.test(ua)?'Firefox':/Safari\//.test(ua)?'Safari':'';
+  return [dev, os, br].filter(Boolean).join(' · ');
+}
+function fmtDT(iso){ const d = new Date(iso); if(isNaN(d)) return ''; const p=n=>String(n).padStart(2,'0'); return `${p(d.getDate())}.${p(d.getMonth()+1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function renderOwnerLogins(){
+  const head = `<div class="topbar"><div><h1>🔐 Kirish tarixi</h1><p>Kim, qachon va qaysi qurilmadan saytga kirgani. Qancha vaqt faol bo'lganini "⏱️ Faollik" bo'limidan ko'ring.</p></div></div>`;
+  if(!loginData){ loadLogins(); return head+`<div class="card"><div class="empty">Yuklanmoqda...</div></div>`; }
+  if(loginData.error) return head+`<div class="card"><div class="empty">Xato: ${dlEsc(loginData.error)}<br>owner_profile.sql ni Supabase da ishga tushiring.</div></div>`;
+  const byId = {}; DB.users.forEach(u=>byId[String(u.id)] = u);
+  const roleLbl = u=> u.owner ? 'Bosh admin' : {admin:'Admin', teacher:"O'qituvchi", student:"O'quvchi"}[u.role]||'';
+  const rows = loginData.rows.filter(r=>byId[String(r.user_id)] && (loginFilter==='all' || byId[String(r.user_id)].role===loginFilter));
+  const cut = Date.now()-7*864e5, cut1 = Date.now()-864e5;
+  const per = {};
+  loginData.rows.forEach(r=>{ const o = per[r.user_id] || (per[r.user_id] = {last:r.at, n7:0, n1:0}); if(new Date(r.at)>cut) o.n7++; if(new Date(r.at)>cut1) o.n1++; if(r.at>o.last) o.last = r.at; });
+  const sum = DB.users.filter(u=>u.status!=='pending' && (loginFilter==='all'||u.role===loginFilter)).map(u=>({u, p: per[String(u.id)]})).sort((a,b)=>(b.p?new Date(b.p.last):0)-(a.p?new Date(a.p.last):0));
+  const fb = (k,l)=>`<button class="btn sm ${loginFilter===k?'gold':'outline'}" onclick="loginFilter='${k}';renderMain()">${l}</button>`;
+  return head + `<div class="card" style="margin-bottom:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${fb('all','Hammasi')}${fb('student',"O'quvchilar")}${fb('teacher',"O'qituvchilar")}${fb('admin','Administratorlar')}<button class="btn sm outline" style="margin-left:auto;" onclick="loginData=null;renderMain()">↻ Yangilash</button></div>
+  <div class="card" style="margin-bottom:12px;"><h3 style="margin-top:0;">Oxirgi kirishlar</h3><div style="overflow-x:auto;"><table><thead><tr><th>Foydalanuvchi</th><th>Rol</th><th>Oxirgi kirish</th><th>24 soatda</th><th>7 kunda</th></tr></thead><tbody>
+  ${sum.map(({u,p})=>`<tr><td>${dlEsc(u.name)}</td><td>${roleLbl(u)}</td><td>${p?fmtDT(p.last):'<span style="color:var(--text-dim);">hali kirmagan</span>'}</td><td>${p?p.n1:0}</td><td>${p?p.n7:0}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">Ma\'lumot yo\'q</td></tr>'}</tbody></table></div></div>
+  <div class="card"><h3 style="margin-top:0;">Kirishlar jurnali (oxirgi ${rows.length} ta)</h3><div style="overflow-x:auto;"><table><thead><tr><th>Vaqt</th><th>Foydalanuvchi</th><th>Rol</th><th>Qurilma</th></tr></thead><tbody>
+  ${rows.slice(0,200).map(r=>{ const u = byId[String(r.user_id)]; return `<tr><td>${fmtDT(r.at)}</td><td>${dlEsc(u.name)}</td><td>${roleLbl(u)}</td><td style="font-size:12.5px;color:var(--text-dim);">${dlEsc(uaShort(r.ua))}</td></tr>`; }).join('') || '<tr><td colspan="4" class="empty">Hali kirishlar yozilmagan</td></tr>'}</tbody></table></div>
+  <div class="hint" style="margin-top:8px;">Jurnal SQL ishga tushirilgandan keyingi kirishlarni yozadi.</div></div>`;
 }
 
 /* ============ ANNOUNCEMENTS ============ */
@@ -5758,7 +5883,71 @@ async function dlStudentJoin(teacherId){
   }catch(e){ DL.err = e.message; }
   DL.busy = false; renderMain();
 }
-/* --- Ustoz/admin: ochiq (ko'rgazma) dars --- */
+/* --- Ochiq (ko'rgazma) dars: YouTube Live saytning ichida --- */
+function ytParse(raw){
+  raw = String(raw||'').trim(); if(!raw) return null;
+  let m = raw.match(/^UC[\w-]{22}$/); if(m) return {kind:'channel', id:raw};
+  m = raw.match(/youtube\.com\/channel\/(UC[\w-]{22})/i); if(m) return {kind:'channel', id:m[1]};
+  m = raw.match(/(?:youtu\.be\/|[?&]v=|\/live\/|\/embed\/|\/shorts\/)([\w-]{11})(?![\w-])/i); if(m) return {kind:'video', id:m[1]};
+  if(/^[\w-]{11}$/.test(raw)) return {kind:'video', id:raw};
+  return null;
+}
+function ytEmbedUrl(p){
+  if(!p) return '';
+  const q = 'rel=0&modestbranding=1&playsinline=1';
+  return p.kind==='channel' ? 'https://www.youtube.com/embed/live_stream?channel='+encodeURIComponent(p.id)+'&'+q : 'https://www.youtube.com/embed/'+encodeURIComponent(p.id)+'?'+q;
+}
+function ytIframe(p, cls){
+  return `<iframe class="${cls||'yt-iframe'}" src="${ytEmbedUrl(p)}" title="Jonli dars" allow="accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+}
+const YT = {parsed:null, err:'', link:''};
+function ytKey(){ const u = curUser(); return 'yt_'+(u?u.id:''); }
+function ytInit(){
+  if(YT.init) return; YT.init = true;
+  try{ const raw = localStorage.getItem(ytKey())||''; const p = ytParse(raw); if(p){ YT.parsed = p; YT.link = location.origin+'/?live='+p.id; } }catch(e){}
+}
+function ytCreate(){
+  const v = (document.getElementById('yt-link')||{}).value||'';
+  const p = ytParse(v);
+  if(!p){ YT.err = "Bu YouTube linki emas. Efir linkini (youtube.com/watch?v=... yoki youtu.be/...) to'liq qo'ying."; YT.parsed = null; renderMain(); return; }
+  YT.err = ''; YT.parsed = p; YT.link = location.origin+'/?live='+p.id;
+  try{ localStorage.setItem(ytKey(), p.id); }catch(e){}
+  renderMain();
+}
+function ytClear(){ YT.parsed = null; YT.link = ''; YT.err = ''; try{ localStorage.removeItem(ytKey()); }catch(e){} renderMain(); }
+function ytCopy(){
+  const link = YT.link;
+  const done = ()=>{ const b = document.getElementById('yt-copy'); if(b){ b.textContent = 'Nusxalandi ✓'; setTimeout(()=>{ if(b) b.textContent = 'Linkni nusxalash'; }, 2000); } };
+  try{ navigator.clipboard.writeText(link).then(done, ()=>{ prompt('Linkni nusxalang:', link); }); }catch(e){ prompt('Linkni nusxalang:', link); }
+}
+function ytShare(){ window.open('https://t.me/share/url?url='+encodeURIComponent(YT.link)+'&text='+encodeURIComponent("Akademiya Pushkina — ochiq dars. Qo'shilish uchun linkni bosing:"), '_blank'); }
+function ytCardHtml(){
+  ytInit();
+  const step = (n, t)=>`<div style="display:flex;gap:10px;align-items:flex-start;margin:0 0 10px;"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--gold);color:#2A1F5E;font-weight:700;font-size:13px;display:grid;place-items:center;">${n}</span><div style="font-size:14px;line-height:1.5;">${t}</div></div>`;
+  const err = YT.err ? `<div class="err" style="margin-top:8px;">${dlEsc(YT.err)}</div>` : '';
+  let linkBlock = '';
+  if(YT.parsed){
+    linkBlock = `<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
+      <label style="margin-top:0;">Mehmonlarga yuboriladigan link</label>
+      <input type="text" readonly value="${dlEsc(YT.link)}" onclick="this.select()">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+        <button class="btn gold" id="yt-copy" onclick="ytCopy()">Linkni nusxalash</button>
+        <button class="btn outline" onclick="ytShare()">Telegramga yuborish</button>
+        <button class="btn outline" onclick="ytClear()">Boshqa efir</button>
+      </div>
+      <div style="margin-top:14px;font-size:13px;color:var(--text-dim);">Mehmonlar shuni ko'radi (tekshirib oling, video chiqmasa efirda "Joylashtirishga ruxsat" yoqilganini tekshiring):</div>
+      <div class="yt-wrap" style="margin-top:8px;">${ytIframe(YT.parsed)}</div>
+    </div>`;
+  }
+  return `<div class="card"><h3>Ochiq dars: YouTube efir</h3>
+    <p style="color:var(--text-dim);font-size:13.5px;margin-bottom:12px;">Ro'yxatdan o'tmagan odamlar link orqali kirib, darsni saytning ichida ko'radi va "Mashqlar" bo'limidan foydalanadi. Tomoshabinlar faqat ko'radi (kamerasi yoqilmaydi), soni cheksiz va bepul.</p>
+    ${step(1, `YouTube Studio'da jonli efir yarating (kanalingizda jonli efir yoqilgan bo'lishi kerak). Ko'rinishni <b>"Ro'yxatga kiritilmagan"</b> (Unlisted), <b>"Joylashtirishga ruxsat"</b>ni yoqilgan qoldiring. <a href="https://studio.youtube.com" target="_blank" rel="noopener" style="color:var(--gold-dark);font-weight:600;">YouTube Studio ↗</a>`)}
+    ${step(2, `Efir linkini shu yerga qo'ying:`)}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 4px 34px;"><input type="text" id="yt-link" placeholder="https://www.youtube.com/watch?v=..." style="flex:1;min-width:220px;" value="${YT.parsed?'':''}"><button class="btn gold" onclick="ytCreate()">Link yaratish</button></div>${err}
+    ${linkBlock}
+  </div>`;
+}
+/* --- Ustoz/admin: ochiq dars (Daily, kamerali) --- */
 function olKey(){ const u = curUser(); return 'ol_'+(u?u.id:''); }
 async function olRestore(){
   const ol = DL.ol; if(ol.checked) return; ol.checked = true;
@@ -5797,15 +5986,16 @@ function olCopy(){
   try{ navigator.clipboard.writeText(link).then(done, ()=>{ prompt('Linkni nusxalang:', link); }); }catch(e){ prompt('Linkni nusxalang:', link); }
 }
 function olShare(){ window.open('https://t.me/share/url?url='+encodeURIComponent(olLink())+'&text='+encodeURIComponent("Akademiya Pushkina — ochiq dars. Qo'shilish uchun linkni bosing:"), '_blank'); }
-function openLessonCardHtml(){
-  if(DL.avail===false) return `<div class="card"><h3>Ochiq (ko'rgazma) dars</h3><div class="hint">Bu imkoniyat hali yoqilmagan. Sayt egasi Railway sozlamalariga <b>DAILY_API_KEY</b> qo'shishi kerak.</div></div>`;
+function dailyCardHtml(){
+  const T = "Ochiq dars: kamerali (Daily)";
+  if(DL.avail===false) return `<div class="card"><h3>${T}</h3><div class="hint">Bu imkoniyat hali yoqilmagan. Sayt egasi Railway sozlamalariga <b>DAILY_API_KEY</b> qo'shishi va Daily hisobiga to'lov kartasini ulashi kerak.</div></div>`;
   const ol = DL.ol;
   const err = ol.err ? `<div class="err" style="margin-top:10px;">${dlEsc(ol.err)}</div>` : '';
-  if(ol.busy) return `<div class="card"><h3>Ochiq (ko'rgazma) dars</h3><div class="empty">Yuklanmoqda…</div></div>`;
-  if(!ol.room) return `<div class="card"><h3>Ochiq (ko'rgazma) dars</h3>
-    <p style="color:var(--text-dim);font-size:13.5px;margin-bottom:12px;">Ro'yxatdan o'tmasdan, ilova yuklamasdan faqat link orqali qo'shiladigan dars. Qatnashuvchilar ismini yozib kiradi, dars paytida faqat "Mashqlar" bo'limini ko'radi.</p>
+  if(ol.busy) return `<div class="card"><h3>${T}</h3><div class="empty">Yuklanmoqda…</div></div>`;
+  if(!ol.room) return `<div class="card"><h3>${T}</h3>
+    <p style="color:var(--text-dim);font-size:13.5px;margin-bottom:12px;">Ro'yxatdan o'tmasdan, ilova yuklamasdan faqat link orqali qo'shiladigan dars. Qatnashuvchilar ismini yozib kiradi, kamera va mikrofonini yoqa oladi, dars paytida "Mashqlar" bo'limini ham ko'radi.</p>
     <button class="btn gold" onclick="olStart()">Ochiq dars yaratish</button>${err}</div>`;
-  return `<div class="card"><h3>Ochiq (ko'rgazma) dars</h3>
+  return `<div class="card"><h3>${T}</h3>
     <label style="margin-top:0;">Qatnashuvchilarga yuboriladigan link</label>
     <input type="text" readonly value="${dlEsc(olLink())}" onclick="this.select()">
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
@@ -5818,21 +6008,25 @@ function openLessonCardHtml(){
     </div>
     <div class="hint">Link darsni tugatguningizcha yoki 4 soatdan keyin ishlamay qoladi. Avval siz darsga kiring, keyin linkni yuboring.</div>${err}</div>`;
 }
-/* --- Mehmon rejimi (?dars=kod) --- */
+function openLessonCardHtml(){ return dailyCardHtml() + ytCardHtml(); }
+/* --- Mehmon rejimi (?dars=kod Daily, ?live=id YouTube) --- */
 let GUEST_MODE = false, GUEST_USER = null;
-const GS = {room:'', state:'loading', name:'', tab:'video', err:'', busy:false};
+const GS = {mode:'daily', p:null, room:'', state:'loading', name:'', tab:'video', err:'', busy:false};
 function guestId(){ let id=''; try{ id = localStorage.getItem('guest_id')||''; if(!id){ id='guest_'+Math.random().toString(36).slice(2,10); localStorage.setItem('guest_id', id); } }catch(e){} return id || ('guest_'+Date.now()); }
-async function startGuest(room){
+async function startGuest(src){
   GUEST_MODE = true; GUEST_USER = {id:guestId(), role:'student', name:'Mehmon'};
-  GS.room = room; try{ GS.name = localStorage.getItem('guest_name')||''; }catch(e){}
+  GS.mode = src.mode; GS.p = src.p || null; GS.room = src.room || '';
+  try{ GS.name = localStorage.getItem('guest_name')||''; }catch(e){}
   document.getElementById('landing-screen').classList.add('hide');
   document.getElementById('login-screen').classList.remove('show');
   const sf = document.getElementById('social-float'); if(sf) sf.style.display = 'none';
   document.getElementById('guest-screen').classList.add('show');
   guestShell();
   const bl = document.getElementById('boot-loader'); if(bl) bl.remove();
+  if(GS.mode==='yt'){ GS.state = 'live'; guestVideoRender(); guestTabs(); }
   try{ DB.practiceItems = await fetchTable('practice_items'); }catch(e){ DB.practiceItems = []; }
-  try{ const r = await fetch('/api/daily/room/'+encodeURIComponent(room)); GS.state = r.ok ? 'name' : (r.status===503 ? 'off' : 'gone'); }
+  if(GS.mode==='yt'){ if(GS.tab==='practice') renderMain(); return; }
+  try{ const r = await fetch('/api/daily/room/'+encodeURIComponent(GS.room)); GS.state = r.ok ? 'name' : (r.status===503 ? 'off' : 'gone'); }
   catch(e){ GS.state = 'neterr'; }
   guestVideoRender(); guestTabs();
 }
@@ -5854,6 +6048,10 @@ function guestTabs(){
 function guestTab(tab){ GS.tab = tab; guestTabs(); }
 function guestVideoRender(){
   const w = document.getElementById('g-video-wrap'); if(!w) return;
+  if(GS.mode==='yt'){
+    if(!w.querySelector('iframe')) w.innerHTML = ytIframe(GS.p, 'g-iframe') + `<button class="g-expand" onclick="guestTab('video')" title="Kattalashtirish">⤢</button><div class="g-note">Efir hali boshlanmagan bo'lsa, ustoz boshlaguncha kuting va sahifani yangilang. Ovoz yo'q bo'lsa, videodagi ovoz tugmasini bosing.</div>`;
+    return;
+  }
   const msg = (t, sub)=>`<div class="card" style="text-align:center;padding:36px 18px;"><div style="font-size:18px;font-weight:700;margin-bottom:8px;">${t}</div><div style="color:var(--text-dim);font-size:14px;">${sub||''}</div></div>`;
   if(GS.state==='loading'){ w.innerHTML = msg('Yuklanmoqda…',''); return; }
   if(GS.state==='gone'){ w.innerHTML = msg('Dars topilmadi yoki tugagan', "Link eskirgan bo'lishi mumkin. \"Mashqlar\" bo'limidan foydalanishingiz mumkin."); return; }
@@ -8176,12 +8374,12 @@ function renderUsers(){
   const teachers = DB.users.filter(u=>u.role==='teacher');
   let students = DB.users.filter(u=>u.role==='student' && u.status!=='pending');
   const userRow = (u)=>{
-    const roleLabel = {admin:'Administrator', teacher:'O\'qituvchi', student:'O\'quvchi'}[u.role];
+    const roleLabel = u.owner ? 'Bosh admin' : {admin:'Administrator', teacher:'O\'qituvchi', student:'O\'quvchi'}[u.role];
     return `<tr>
       <td>${u.name}</td><td>${u.username}</td><td><span class="pill gray">${roleLabel}</span></td>
       <td style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn sm outline" onclick="openUserCredentialsModal('${u.id}')">Login/parolni o'zgartirish</button>
-        ${u.id===session.userId ? '' : `<button class="icon-btn rose" onclick="deleteUser('${u.id}')">O'chirish</button>`}
+        ${(u.id===session.userId || u.owner) ? '' : `<button class="icon-btn rose" onclick="deleteUser('${u.id}')">O'chirish</button>`}
       </td>
     </tr>`;
   };
@@ -8271,6 +8469,7 @@ async function saveUserCredentials(userId){
 }
 async function deleteUser(id){
   if(id===session.userId) return;
+  { const tu = DB.users.find(x=>x.id===id); if(tu && tu.owner) return; }
   if(!confirm('Bu hisobni o\'chirmoqchimisiz?')) return;
   await deleteRow('users', id);
   DB.users = DB.users.filter(x=>x.id!==id);

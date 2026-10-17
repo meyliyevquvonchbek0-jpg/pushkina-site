@@ -96,7 +96,7 @@ async function isStaff(userId) {
     const r = await fetch(SB_URL + '/rest/v1/users_public?select=role,status&id=eq.' + encodeURIComponent(userId), { headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY } });
     if (!r.ok) return false;
     const rows = await r.json();
-    return !!(rows[0] && (rows[0].role === 'teacher' || rows[0].role === 'admin') && rows[0].status !== 'pending');
+    return !!(rows[0] && (rows[0].role === 'teacher' || rows[0].role === 'admin' || rows[0].role === 'owner') && rows[0].status !== 'pending');
   } catch (e) { return false; }
 }
 function cleanName(n, fallback) { return String(n || '').replace(/[<>"'\\]/g, '').trim().slice(0, 40) || fallback; }
