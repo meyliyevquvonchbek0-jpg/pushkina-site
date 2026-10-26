@@ -5259,7 +5259,7 @@ function openVideoModal(){
       <label>Sarlavha</label><input type="text" id="v-title" placeholder="masalan: A2 — 5-dars">
       <label>O'qituvchi</label>
       <select id="v-teacher"><option value="">— tanlang —</option>${teacherOptsHtml}</select>
-      <label>Video faylini yuklash (maks. 50 MB)</label>
+      <label>Video faylini yuklash (maks. 2 GB)</label>
       <input type="file" id="v-file" accept="video/*">
       <p style="text-align:center;font-size:12px;color:var(--text-dim);margin:10px 0;">— yoki —</p>
       <label>Video havolasi (YouTube)</label>
@@ -5281,7 +5281,7 @@ async function saveVideo(){
   const btn = document.getElementById('v-save-btn');
   if(!title){ err.textContent = 'Sarlavhani kiriting.'; return; }
   if(!file && !url){ err.textContent = 'Video fayl yuklang yoki havola kiriting.'; return; }
-  if(file && file.size > 50*1024*1024){ err.textContent = 'Fayl 50 MB dan katta. Kichikroq video yuklang yoki YouTube havolasidan foydalaning.'; return; }
+  if(file && file.size > 2048*1024*1024){ err.textContent = 'Fayl 2 GB dan katta. Videoni siqib kichraytiring yoki YouTube havolasidan foydalaning.'; return; }
   let finalUrl = url;
   if(file){
     btn.disabled = true; btn.textContent = 'Yuklanmoqda...';
