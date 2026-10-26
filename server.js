@@ -6,7 +6,9 @@ const pdfParse = require('pdf-parse');
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
+const dbp = require('./dbproxy');
+dbp.mount(app);
 
 // Prevent browsers from caching the HTML shell / manifest / version files
 app.use((req, res, next) => {
@@ -27,7 +29,7 @@ const SYSTEM_PROMPTS = {
 // ============ TELEGRAM (token faqat serverda) ============
 const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN || process.env.TOKEN || '';
 const SB_URL = process.env.SUPABASE_URL || 'https://nyyspriexqbulupofeoo.supabase.co';
-const SB_KEY = process.env.SUPABASE_KEY || 'sb_publishable_R0pt22Bd2HkLGkC9omlHTQ_Wg9A1ta2';
+const SB_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || 'sb_publishable_R0pt22Bd2HkLGkC9omlHTQ_Wg9A1ta2';
 let tgAllowed = { at: 0, ids: new Set() };
 async function loadAllowedChats(){
   if (Date.now() - tgAllowed.at < 60000) return tgAllowed.ids;
@@ -90,7 +92,12 @@ function dailyReady(res) {
   if (!DAILY_KEY) { res.status(503).json({ ok: false, error: "Daily.co hali sozlanmagan. Railway'da DAILY_API_KEY qo'shilishi kerak." }); return false; }
   return true;
 }
-async function isStaff(userId) {
+async function isStaff(userId, req) {
+  if (dbp.ENABLED) {
+    // Xavfsiz rejim: faqat imzolangan token egasi (ustoz/admin) bo'la oladi — body'dagi userId'ga ishonilmaydi
+    const ctx = req ? await dbp.ctxFromReq(req) : null;
+    return !!(ctx && dbp.isStaffCtx(ctx));
+  }
   if (!userId) return false;
   try {
     const r = await fetch(SB_URL + '/rest/v1/users_public?select=role,status&id=eq.' + encodeURIComponent(userId), { headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY } });
@@ -107,7 +114,7 @@ app.post('/api/daily/start', async (req, res) => {
   if (!dailyReady(res)) return;
   if (!dailyLimit(req, res, 30)) return;
   const { userId, name } = req.body || {};
-  if (!(await isStaff(userId))) return res.status(403).json({ ok: false, error: "Faqat ustoz yoki admin ochiq dars yarata oladi." });
+  if (!(await isStaff(userId, req))) return res.status(403).json({ ok: false, error: "Faqat ustoz yoki admin ochiq dars yarata oladi." });
   const exp = Math.floor(Date.now() / 1000) + DAILY_HOURS * 3600;
   const room = 'pk-' + Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
   try {
@@ -124,7 +131,7 @@ app.post('/api/daily/owner', async (req, res) => {
   if (!dailyReady(res)) return;
   if (!dailyLimit(req, res, 60)) return;
   const { userId, name } = req.body || {}; const room = cleanRoom(req.body && req.body.room);
-  if (!room || !(await isStaff(userId))) return res.status(403).json({ ok: false, error: 'Ruxsat yo\'q.' });
+  if (!room || !(await isStaff(userId, req))) return res.status(403).json({ ok: false, error: 'Ruxsat yo\'q.' });
   try {
     const g = await dailyApi('GET', '/rooms/' + room);
     if (!g.ok) return res.status(404).json({ ok: false, error: 'Dars xonasi topilmadi yoki tugagan.' });
@@ -172,7 +179,7 @@ app.post('/api/daily/class', async (req, res) => {
   if (!dailyLimit(req, res, 60)) return;
   const { userId, teacherId, name } = req.body || {};
   const room = classRoomName(teacherId);
-  if (!room || !(await isStaff(userId))) return res.status(403).json({ ok: false, error: 'Ruxsat yo\'q.' });
+  if (!room || !(await isStaff(userId, req))) return res.status(403).json({ ok: false, error: 'Ruxsat yo\'q.' });
   const exp = Math.floor(Date.now() / 1000) + 12 * 3600;
   try {
     let g = await dailyApi('GET', '/rooms/' + room);
@@ -218,7 +225,7 @@ app.post('/api/daily/end', async (req, res) => {
   if (!dailyReady(res)) return;
   if (!dailyLimit(req, res, 60)) return;
   const { userId } = req.body || {}; const room = (req.body && req.body.teacherId) ? classRoomName(req.body.teacherId) : cleanRoom(req.body && req.body.room);
-  if (!room || !(await isStaff(userId))) return res.status(403).json({ ok: false, error: 'Ruxsat yo\'q.' });
+  if (!room || !(await isStaff(userId, req))) return res.status(403).json({ ok: false, error: 'Ruxsat yo\'q.' });
   try { await dailyApi('DELETE', '/rooms/' + room); res.json({ ok: true }); }
   catch (e) { res.status(502).json({ ok: false, error: "Daily.co ga ulanib bo'lmadi." }); }
 });

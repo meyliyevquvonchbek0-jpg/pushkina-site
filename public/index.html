@@ -811,7 +811,73 @@
 /* ============ SUPABASE CONNECTION ============ */
 const SUPABASE_URL = 'https://nyyspriexqbulupofeoo.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_R0pt22Bd2HkLGkC9omlHTQ_Wg9A1ta2';
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const sbReal = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+/* ===== XAVFSIZ KO'PRIK: sayt ma'lumotlarni server orqali oladi (server rol bo'yicha ruxsatni tekshiradi) ===== */
+let PROXY = false;
+const DIRECT_TABLES = ['live_games','live_game_players','live_game_answers','duels','duel_queue','duel_invites','duel_answers','duel_words','duel_sentences'];
+function authToken(){ try{ return localStorage.getItem('pushkina_token')||''; }catch(e){ return ''; } }
+function setAuth(t){ try{ localStorage.setItem('pushkina_token', t); }catch(e){} }
+function clearAuth(){ try{ localStorage.removeItem('pushkina_token'); }catch(e){} }
+function authHeaders(){ const t = authToken(); const h = {'Content-Type':'application/json'}; if(t) h.Authorization = 'Bearer '+t; return h; }
+let authExpiredShown = false;
+function onAuthExpired(){
+  if(authExpiredShown) return; authExpiredShown = true;
+  clearAuth(); try{ localStorage.removeItem('pushkina_session'); }catch(e){}
+  try{ alert('Sessiya tugadi. Iltimos, qaytadan kiring.'); }catch(e){}
+  location.reload();
+}
+async function proxyPost(url, body){
+  try{
+    const r = await fetch(url, {method:'POST', headers:authHeaders(), body:JSON.stringify(body)});
+    let j = {}; try{ j = await r.json(); }catch(e){}
+    if(r.status===401 && authToken()){ onAuthExpired(); }
+    return j;
+  }catch(e){ return {error:{message:'Server bilan aloqa yo\'q'}}; }
+}
+class QB{
+  constructor(t){ this.t = t; this.ops = []; }
+  then(ok, bad){
+    return proxyPost('/api/db', {table:this.t, ops:this.ops}).then(j=>({data: j.data===undefined?null:j.data, error: j.error||null, count: j.count==null?null:j.count})).then(ok, bad);
+  }
+}
+['select','insert','update','delete','eq','neq','in','is','gt','gte','lt','lte','like','ilike','not','contains','order','limit','range','single','maybeSingle'].forEach(m=>{
+  QB.prototype[m] = function(...a){ this.ops.push([m, a]); return this; };
+});
+const sb = {
+  from(t){ return (!PROXY || DIRECT_TABLES.includes(t)) ? sbReal.from(t) : new QB(t); },
+  rpc(name, args){ return PROXY ? proxyPost('/api/rpc', {name, args}).then(j=>({data: j.data===undefined?null:j.data, error: j.error||null})) : sbReal.rpc(name, args); },
+  channel(...a){ return sbReal.channel(...a); },
+  removeChannel(c){ return sbReal.removeChannel(c); },
+  storage: sbReal.storage
+};
+async function initProxy(){
+  try{
+    const r = await fetch('/api/dbstatus', {cache:'no-store'});
+    const j = await r.json();
+    PROXY = !!(j && j.proxy);
+  }catch(e){ PROXY = false; }
+  if(PROXY){
+    const f0 = window.fetch.bind(window);
+    window.fetch = function(url, opts){
+      try{
+        if(typeof url==='string' && url.startsWith('/api/') && !url.startsWith('/api/db') && !url.startsWith('/api/rpc')){
+          opts = Object.assign({}, opts||{});
+          const h = Object.assign({}, opts.headers||{}); const t = authToken(); if(t && !h.Authorization) h.Authorization = 'Bearer '+t;
+          opts.headers = h;
+        }
+      }catch(e){}
+      return f0(url, opts);
+    };
+  }
+}
+async function proxyMe(){
+  try{
+    const r = await fetch('/api/me', {headers:authHeaders(), cache:'no-store'});
+    if(!r.ok) return null;
+    const j = await r.json(); return j && j.ok ? j.user : null;
+  }catch(e){ return null; }
+}
 
 const FIELD_MAP = {
   teachers: {userId:'user_id', certificateUrl:'certificate_url', highlightUrl:'highlight_url', isLive:'is_live', totalStudentsTaught:'total_students_taught', certificateLevel:'certificate_level', faceDescriptor:'face_descriptor', telegramChatId:'telegram_chat_id'},
@@ -887,6 +953,12 @@ async function fetchTable(table){
   return all.map(r=>fromRow(table, r));
 }
 async function verifyLogin(username, password){
+  if(PROXY){
+    try{
+      const r = await fetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username, password, check:true})});
+      const j = await r.json(); return j && j.ok ? {} : null;
+    }catch(e){ return null; }
+  }
   const {data, error} = await sb.rpc('verify_login', {p_username: username, p_password: password});
   if(error){ console.error('verify_login', error); return null; }
   return (data && data[0]) ? data[0] : null;
@@ -2017,48 +2089,58 @@ function bookWheelQuestions(){
   return out;
 }
 
+async function loadAllData(){
+  const [
+    users, teachers, students, schedule, attendance, payments, videos,
+    materials, announcements, ratings, settingsRows, tests, testQuestions,
+    testAttempts, homework, homeworkStatus, rewards, rewardRequests,
+    reviews, dailyTotals, nazoratScores, teacherCheckins, flashcardSets, teacherRatings, dailyWords, botQuestions, videoProgress, teacherPayouts, practiceItems
+  ] = await Promise.all([
+    fetchTable('users_public'), fetchTable('teachers'), fetchTable('students'),
+    fetchTable('schedule'), fetchTable('attendance'), fetchTable('payments'),
+    fetchTable('videos'), fetchTable('materials'), fetchTable('announcements'),
+    fetchTable('ratings'), fetchTable('settings'), fetchTable('tests'),
+    fetchTable('test_questions'), fetchTable('test_attempts'), fetchTable('homework'),
+    fetchTable('homework_status'), fetchTable('rewards'), fetchTable('reward_requests'),
+    fetchTable('reviews'), fetchTable('daily_totals'), fetchTable('nazorat_scores'),
+    fetchTable('teacher_checkins'), fetchTable('flashcard_sets'), fetchTable('teacher_ratings'),
+    fetchTable('daily_words'), fetchTable('bot_questions'), fetchTable('video_progress'),
+    fetchTable('teacher_payouts'), fetchTable('practice_items')
+  ]);
+  DB.users = users; DB.teachers = teachers; DB.students = students;
+  DB.schedule = schedule; DB.attendance = attendance; DB.payments = payments;
+  DB.videos = videos; DB.materials = materials; DB.announcements = announcements;
+  DB.ratings = ratings;
+  if(settingsRows[0]) DB.settings = settingsRows[0];
+  DB.tests = tests; DB.testQuestions = testQuestions; DB.testAttempts = testAttempts;
+  DB.homework = homework; DB.homeworkStatus = homeworkStatus; DB.rewards = rewards;
+  DB.rewardRequests = rewardRequests; DB.reviews = reviews; DB.dailyTotals = dailyTotals;
+  DB.nazoratScores = nazoratScores; DB.teacherCheckins = teacherCheckins;
+  DB.flashcardSets = flashcardSets;
+  DB.teacherRatings = teacherRatings;
+  DB.dailyWords = dailyWords;
+  DB.botQuestions = botQuestions;
+  try{ DB.leads = await fetchTable('leads'); }catch(_){ DB.leads = []; }
+  try{ DB.wheelQuestions = await fetchTable('wheel_questions'); }catch(_){ DB.wheelQuestions = []; }
+  try{ DB.wheelQuestions.push(...bookWheelQuestions()); }catch(_){}
+  try{ DB.wheelQuestions.push(...enWheelQuestions()); }catch(_){}
+  try{ DB.wheelQuestions.push(...enGrammarQuestions()); }catch(_){}
+  DB.videoProgress = videoProgress;
+  DB.teacherPayouts = teacherPayouts;
+  DB.practiceItems = practiceItems;
+}
+
 /* ============ BOOTSTRAP ============ */
 async function boot(){
   try{ const qs = new URLSearchParams(location.search); const gq = qs.get('live'), gd = qs.get('dars'); const gp = gq ? ytParse(gq) : null; if(gp){ await Promise.resolve(); return startGuest({mode:'yt', p:gp}); } if(gd && /^[a-z0-9-]{6,40}$/.test(gd)){ await Promise.resolve(); return startGuest({mode:'daily', room:gd}); } }catch(e){ console.error(e); }
   try{
-    const [
-      users, teachers, students, schedule, attendance, payments, videos,
-      materials, announcements, ratings, settingsRows, tests, testQuestions,
-      testAttempts, homework, homeworkStatus, rewards, rewardRequests,
-      reviews, dailyTotals, nazoratScores, teacherCheckins, flashcardSets, teacherRatings, dailyWords, botQuestions, videoProgress, teacherPayouts, practiceItems
-    ] = await Promise.all([
-      fetchTable('users_public'), fetchTable('teachers'), fetchTable('students'),
-      fetchTable('schedule'), fetchTable('attendance'), fetchTable('payments'),
-      fetchTable('videos'), fetchTable('materials'), fetchTable('announcements'),
-      fetchTable('ratings'), fetchTable('settings'), fetchTable('tests'),
-      fetchTable('test_questions'), fetchTable('test_attempts'), fetchTable('homework'),
-      fetchTable('homework_status'), fetchTable('rewards'), fetchTable('reward_requests'),
-      fetchTable('reviews'), fetchTable('daily_totals'), fetchTable('nazorat_scores'),
-      fetchTable('teacher_checkins'), fetchTable('flashcard_sets'), fetchTable('teacher_ratings'),
-      fetchTable('daily_words'), fetchTable('bot_questions'), fetchTable('video_progress'),
-      fetchTable('teacher_payouts'), fetchTable('practice_items')
-    ]);
-    DB.users = users; DB.teachers = teachers; DB.students = students;
-    DB.schedule = schedule; DB.attendance = attendance; DB.payments = payments;
-    DB.videos = videos; DB.materials = materials; DB.announcements = announcements;
-    DB.ratings = ratings;
-    if(settingsRows[0]) DB.settings = settingsRows[0];
-    DB.tests = tests; DB.testQuestions = testQuestions; DB.testAttempts = testAttempts;
-    DB.homework = homework; DB.homeworkStatus = homeworkStatus; DB.rewards = rewards;
-    DB.rewardRequests = rewardRequests; DB.reviews = reviews; DB.dailyTotals = dailyTotals;
-    DB.nazoratScores = nazoratScores; DB.teacherCheckins = teacherCheckins;
-    DB.flashcardSets = flashcardSets;
-    DB.teacherRatings = teacherRatings;
-    DB.dailyWords = dailyWords;
-    DB.botQuestions = botQuestions;
-    try{ DB.leads = await fetchTable('leads'); }catch(_){ DB.leads = []; }
-    try{ DB.wheelQuestions = await fetchTable('wheel_questions'); }catch(_){ DB.wheelQuestions = []; }
-    try{ DB.wheelQuestions.push(...bookWheelQuestions()); }catch(_){}
-    try{ DB.wheelQuestions.push(...enWheelQuestions()); }catch(_){}
-    try{ DB.wheelQuestions.push(...enGrammarQuestions()); }catch(_){}
-    DB.videoProgress = videoProgress;
-    DB.teacherPayouts = teacherPayouts;
-    DB.practiceItems = practiceItems;
+    await initProxy();
+    let meUser = null;
+    if(PROXY){
+      if(authToken()){ meUser = await proxyMe(); if(!meUser){ clearAuth(); try{ localStorage.removeItem('pushkina_session'); }catch(e){} } }
+      else { try{ localStorage.removeItem('pushkina_session'); }catch(e){} }
+    }
+    await loadAllData();
     try{ renderSocialFloat(); }catch(e){ console.error('renderSocialFloat error', e); }
     try{ renderLandingContent(); }catch(e){ console.error('renderLandingContent error', e); }
     try{ renderLangSwitchers(); }catch(e){ console.error('renderLangSwitchers error', e); }
@@ -2068,7 +2150,7 @@ async function boot(){
       const saved = localStorage.getItem('pushkina_session');
       if(saved){
         const parsed = JSON.parse(saved);
-        const user = DB.users.find(x=>x.id===parsed.userId);
+        const user = PROXY ? (meUser && meUser.id===parsed.userId ? (DB.users.find(x=>x.id===meUser.id)||fromRow('users', meUser)) : null) : DB.users.find(x=>x.id===parsed.userId);
         if(user && user.status!=='pending'){
           session = {userId:user.id, role:user.role};
           VIEW_AS = null; hideOwnersIfNeeded(); loadFlags().then(()=>{ if(session){ renderNav(); renderMain(); } });
@@ -2507,20 +2589,34 @@ async function handleLogin(){
   const p = document.getElementById('login-password').value;
   const errBox = document.getElementById('login-err');
   if(!u || !p){ errBox.textContent = 'Login va parolni kiriting.'; return; }
-  const result = await verifyLogin(u, p);
-  if(!result){
-    errBox.textContent = 'Login yoki parol noto\'g\'ri.';
-    return;
+  let result;
+  if(PROXY){
+    let j;
+    try{
+      const r = await fetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:u, password:p, ua:(navigator.userAgent||'').slice(0,300)})});
+      j = await r.json();
+    }catch(e){ errBox.textContent = 'Server bilan aloqa yo\'q. Internetni tekshiring.'; return; }
+    if(j && j.error){ errBox.textContent = j.error; return; }
+    if(!j || !j.ok || !j.user){ errBox.textContent = 'Login yoki parol noto\'g\'ri.'; return; }
+    result = j.user;
+    if(j.token){ setAuth(j.token); authExpiredShown = false; }
+  }else{
+    result = await verifyLogin(u, p);
+    if(!result){
+      errBox.textContent = 'Login yoki parol noto\'g\'ri.';
+      return;
+    }
   }
   if(result.status === 'pending'){
     errBox.textContent = 'So\'rovingiz hali administrator tomonidan tasdiqlanmagan.';
     return;
   }
   errBox.textContent = '';
+  if(PROXY){ try{ await loadAllData(); }catch(e){ console.error('loadAllData', e); } }
   session = {userId:result.id, role:(result.role==='owner'?'admin':result.role)};
   try{ localStorage.setItem('pushkina_session', JSON.stringify(session)); }catch(e){}
   VIEW_AS = null; hideOwnersIfNeeded(); loadFlags().then(()=>{ if(session){ renderNav(); } });
-  try{ sb.rpc('log_login', {p_user: String(result.id), p_ua: (navigator.userAgent||'').slice(0,300)}).then(()=>{}, ()=>{}); }catch(e){}
+  if(!PROXY) try{ sb.rpc('log_login', {p_user: String(result.id), p_ua: (navigator.userAgent||'').slice(0,300)}).then(()=>{}, ()=>{}); }catch(e){}
   document.getElementById('landing-screen').classList.add('hide');
   document.getElementById('login-screen').classList.remove('show');
   document.getElementById('app').classList.add('show');
@@ -2532,6 +2628,7 @@ async function handleLogin(){
 function handleLogout(){
   session = null; VIEW_AS = null; TAB_HIDE = {};
   try{ localStorage.removeItem('pushkina_session'); }catch(e){}
+  if(PROXY){ clearAuth(); loadAllData().then(()=>{ try{ renderLandingContent(); }catch(e){} }).catch(()=>{}); }
   document.getElementById('app').classList.remove('show');
   showLanding();
   document.getElementById('login-username').value='';
