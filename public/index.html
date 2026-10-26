@@ -5057,7 +5057,28 @@ function renderVideos(u){
   const canAdd = u.role==='admin' || u.role==='teacher';
   let videoList = DB.videos.slice();
   if(videosTeacherFilter) videoList = videoList.filter(v=>v.teacherId===videosTeacherFilter);
-  const cards = videoList.sort((a,b)=>b.date.localeCompare(a.date)).map(v=>{
+  /* ketma-ket ochilish: oldingi dars (video + test >=60% yoki urinishlar tugagan) tugamaguncha keyingisi qulflangan */
+  const seqS = (u.role==='student') ? DB.students.find(x=>x.userId===u.id) : null;
+  const seqOn = !!(seqS && seqS.onlineApproved);
+  const seqAsc = DB.videos.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const seqPrevOf = v=>{ let p = null; for(const x of seqAsc){ if(x.id===v.id) break; if(x.teacherId===v.teacherId) p = x; } return p; };
+  const seqDone = vd=>{
+    const lt = DB.tests.find(t=>!t.isLive && t.videoId===vd.id);
+    if(!lt) return true;
+    const vp = DB.videoProgress.find(x=>x.studentId===seqS.id && x.videoId===vd.id);
+    if(!(vp && vp.completed)) return false;
+    if(!DB.testQuestions.some(q=>q.testId===lt.id)) return true;
+    const at = DB.testAttempts.filter(a=>a.testId===lt.id && a.studentId===seqS.id);
+    if(at.some(a=>a.total>0 && a.score/a.total>=0.6)) return true;
+    return at.length>=testMaxAttempts(lt);
+  };
+  const cards = videoList.sort((a,b)=> seqOn ? (a.date||'').localeCompare(b.date||'') : b.date.localeCompare(a.date)).map(v=>{
+    if(seqOn){
+      const pv = seqPrevOf(v);
+      if(pv && !seqDone(pv)){
+        return `<div class="video-card" style="opacity:.8;"><div style="height:150px;display:flex;align-items:center;justify-content:center;font-size:44px;background:var(--surface2,rgba(127,127,127,.15));">🔒</div><div class="vc-body"><div class="vc-title">${v.title}</div><div class="vc-meta">${teacherName(v.teacherId)} · ${v.date}</div><div style="font-size:12px;color:var(--rose);margin-top:8px;">Avval "${pv.title}" darsini oxirigacha ko'rib, testini topshiring.</div></div></div>`;
+      }
+    }
     let reinforcement = '';
     let embed = toEmbeddable(v.url);
     let isOnlineStudent = false;
@@ -5075,7 +5096,7 @@ function renderVideos(u){
       const isYoutube = /youtube\.com|youtu\.be/.test(v.url);
       if(isDirectFile){
         const elId = `restricted-video-${v.id}`;
-        embed = `<video id="${elId}" controls controlsList="nodownload" src="${v.url}" style="width:100%;display:block;"></video>`;
+        embed = `<video id="${elId}" controls controlsList="nodownload" preload="metadata" src="${v.url}" style="width:100%;display:block;"></video>`;
         setupRestrictedVideoTag(elId, v.id, vp?vp.maxWatchedSeconds:0);
       }else if(isYoutube){
         const elId = `restricted-yt-${v.id}`;
@@ -5267,7 +5288,7 @@ async function saveVideo(){
     try{
       const ext = file.name.split('.').pop();
       const path = `${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
-      const {error: upErr} = await sb.storage.from('videos').upload(path, file);
+      const {error: upErr} = await sb.storage.from('videos').upload(path, file, {cacheControl:'31536000'});
       if(upErr) throw upErr;
       const {data: urlData} = sb.storage.from('videos').getPublicUrl(path);
       finalUrl = urlData.publicUrl;
