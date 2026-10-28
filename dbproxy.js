@@ -42,10 +42,11 @@ async function loadCtx(uid) {
   const { data: u } = await sc.from('users').select(SAFE_USER_COLS).eq('id', uid).maybeSingle();
   let ctx = null;
   if (u && u.status !== 'pending') {
-    ctx = { uid: String(u.id), role: u.role, user: u, sid: null, tid: null };
+    ctx = { uid: String(u.id), role: u.role, user: u, sid: null, tid: null, online: true };
     if (u.role === 'student') {
-      const { data } = await sc.from('students').select('id').eq('user_id', u.id).limit(1);
+      const { data } = await sc.from('students').select('id,online_approved').eq('user_id', u.id).limit(1);
       ctx.sid = data && data[0] ? data[0].id : null;
+      ctx.online = !!(data && data[0] && data[0].online_approved);
     } else if (u.role === 'teacher') {
       const { data } = await sc.from('teachers').select('id').eq('user_id', u.id).limit(1);
       ctx.tid = data && data[0] ? data[0].id : null;
@@ -207,6 +208,16 @@ async function policy(ctx, table, op, filters, payload) {
   if (role === 'student') {
     const sid = ctx.sid;
     if (op === 'select') {
+      if (!ctx.online) {
+        if (table === 'videos') return { emptyRead: true };
+        if (table === 'tests' || table === 'homework') { P.dropVideoLinked = true; return P; }
+        if (table === 'test_questions') {
+          const { data: vt } = await sc.from('tests').select('id').not('video_id', 'is', null);
+          P.excludeTestIds = (vt || []).map(x => x.id);
+          return P;
+        }
+        if (table === 'video_progress') return { emptyRead: true };
+      }
       if (table === 'users' || table === 'teachers' || table === 'students' || OPEN_READ.includes(table)) return P;
       if (STUDENT_OWN_RW.includes(table) || STUDENT_OWN_RO.includes(table)) { P.forceEq.push(['student_id', sid || '-']); return P; }
       return { emptyRead: true };
@@ -266,6 +277,7 @@ async function execute(ctx, body) {
     q = op === 'insert' ? q.insert(isArr ? rows : rows[0]) : q.update(rows[0]);
   }
   for (const [c, v] of P.forceEq) q = q.eq(c, v);
+  if (P.excludeTestIds && P.excludeTestIds.length) q = q.not('test_id', 'in', '(' + P.excludeTestIds.join(',') + ')');
   for (const [m, a] of rest) {
     if (m === 'select') q = q.select(selCols || (typeof a[0] === 'string' ? a[0] : '*'));
     else q = q[m](...a);
@@ -273,6 +285,7 @@ async function execute(ctx, body) {
   const { data, error, count } = await q;
   if (error) return { status: 200, error: { message: error.message, details: error.details, hint: error.hint, code: error.code } };
   let out = data;
+  if (P.dropVideoLinked && Array.isArray(out)) out = out.filter(r => !r.video_id);
   if (Array.isArray(out)) out = stripRows(ctx, table, out);
   else if (out && typeof out === 'object') out = stripRows(ctx, table, [out])[0];
   return { status: 200, data: out, count: count == null ? null : count };

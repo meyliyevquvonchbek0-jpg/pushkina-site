@@ -3207,7 +3207,8 @@ const OWNER_TABS = ['owner-logins','owner-visibility','owner-viewas','bot-questi
 let VIEW_AS = null, TAB_HIDE = {};
 function realUser(){ return DB.users.find(u=>u.id===session.userId); }
 function tabHiddenFor(u, tab){ return !!(u && !u.owner && tab!=='home' && (TAB_HIDE[tab]||[]).includes(u.role)); }
-function navFor(u){ return (u.owner ? NAV.owner : NAV[u.role]).filter(it=>!tabHiddenFor(u,it.id)); }
+function isOnlineStu(u){ if(!u || u.role!=='student') return true; const st = DB.students.find(x=>x.userId===u.id); return !!(st && st.onlineApproved); }
+function navFor(u){ return (u.owner ? NAV.owner : NAV[u.role]).filter(it=>!tabHiddenFor(u,it.id) && !(it.id==='videos' && u.role==='student' && !isOnlineStu(u))); }
 async function loadFlags(){
   try{ const {data,error} = await sb.rpc('get_flags'); if(error) return; const row = (data||[]).find(r=>r.key==='tabs_hidden'); TAB_HIDE = row && row.value ? JSON.parse(row.value) : {}; }catch(e){}
 }
@@ -5054,6 +5055,7 @@ function setVideosTeacherFilter(teacherId){
   renderMain();
 }
 function renderVideos(u){
+  if(u.role==='student' && !isOnlineStu(u)) return `<div class="topbar"><div><h1>${t('Video darslar')}</h1></div></div><div class="card"><div class="empty">Video darslar faqat onlayn o'quvchilar uchun. Onlayn ro'yxatdan o'tish uchun administratorga murojaat qiling.</div></div>`;
   const canAdd = u.role==='admin' || u.role==='teacher';
   let videoList = DB.videos.slice();
   if(videosTeacherFilter) videoList = videoList.filter(v=>v.teacherId===videosTeacherFilter);
@@ -6907,7 +6909,8 @@ function attemptsOf(testId, studentId){
 }
 function renderStudentTests(u){
   const s = DB.students.find(x=>x.userId===u.id);
-  const list = DB.tests.filter(t=>!t.isLive && sTeachers(s).includes(t.teacherId));
+  const stuOnline = isOnlineStu(u);
+  const list = DB.tests.filter(t=>!t.isLive && sTeachers(s).includes(t.teacherId) && (stuOnline || !t.videoId));
   const rows = list.map(test=>{
     const maxAttempts = testMaxAttempts(test);
     const attempts = attemptsOf(test.id, s.id);
