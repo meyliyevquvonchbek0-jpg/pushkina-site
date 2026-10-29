@@ -906,7 +906,7 @@ const FIELD_MAP = {
   students: {userId:'user_id', teacherId:'teacher_id', parentPhone:'parent_phone', telegramChatId:'telegram_chat_id', scheduleSlotId:'schedule_slot_id', onlineRequested:'online_requested', onlineApproved:'online_approved', extraTeacherIds:'extra_teacher_ids', extraSlotIds:'extra_slot_ids'},
   schedule: {teacherId:'teacher_id'},
   attendance: {studentId:'student_id', tasksDone:'tasks_done'},
-  payments: {studentId:'student_id', paidUntil:'paid_until', installmentPart:'installment_part', installmentTotal:'installment_total', nextInstallmentAmount:'next_installment_amount'},
+  payments: {studentId:'student_id', teacherIds:'teacher_ids', studentName:'student_name', paidUntil:'paid_until', installmentPart:'installment_part', installmentTotal:'installment_total', nextInstallmentAmount:'next_installment_amount'},
   videos: {teacherId:'teacher_id', lessonNo:'lesson_no'},
   materials: {teacherId:'teacher_id', videoId:'video_id'},
   announcements: {authorId:'author_id'},
@@ -3648,7 +3648,7 @@ function openTeacherStatsModal(teacherId){
   const activeStudents = myStudents.filter(s=>!s.frozen);
   const frozenStudents = myStudents.filter(s=>s.frozen);
   const myStudentIds = myStudents.map(s=>s.id);
-  const totalPaid = DB.payments.filter(p=>myStudentIds.includes(p.studentId)).reduce((sum,p)=>sum+Number(p.amount||0),0);
+  const totalPaid = teacherPayments(teacherId).reduce((sum,p)=>sum+Number(p.amount||0),0);
   const paidCount = activeStudents.filter(s=>getPaymentStatus(s.id).ok).length;
   const rows = myStudents.map(s=>{
     const su = DB.users.find(x=>x.id===s.userId);
@@ -4109,8 +4109,13 @@ async function toggleStudentFreeze(id){
 async function deleteStudent(id){
   const s = DB.students.find(x=>x.id===id);
   if(!s) return;
-  if(!confirm('Bu o\'quvchini o\'chirmoqchimisiz?')) return;
+  if(!confirm('Bu o\'quvchini o\'chirmoqchimisiz? (To\'lov tarixi va o\'qituvchi oyligi saqlanib qoladi)')) return;
   try{
+    // moliyaviy tarix saqlansin: o'chirishdan oldin to'lovlarga o'qituvchilar va ismni yozib qo'yamiz
+    const uDel = DB.users.find(x=>x.id===s.userId);
+    for(const p of DB.payments.filter(x=>x.studentId===id && !_arr(x.teacherIds).length)){
+      try{ await updateRow('payments', p.id, {teacherIds: sTeachers(s), studentName: uDel?uDel.name:''}); p.teacherIds = sTeachers(s); p.studentName = uDel?uDel.name:''; }catch(eSnap){ console.warn('snapshot', eSnap); }
+    }
     await deleteRow('students', id);
     await deleteRow('users', s.userId);
   }catch(e){
@@ -4121,7 +4126,6 @@ async function deleteStudent(id){
   DB.students = DB.students.filter(x=>x.id!==id);
   DB.users = DB.users.filter(x=>x.id!==s.userId);
   DB.attendance = DB.attendance.filter(x=>x.studentId!==id);
-  DB.payments = DB.payments.filter(x=>x.studentId!==id);
   renderMain();
 }
 
@@ -5058,7 +5062,13 @@ async function savePayment(studentId){
   }
   btn.disabled = true; btn.textContent = 'Saqlanmoqda...';
   try{
-    const newPay = await insertRow('payments', paymentToInsert);
+    { const stP = DB.students.find(x=>x.id===studentId); const uP = stP ? DB.users.find(x=>x.id===stP.userId) : null; if(stP){ paymentToInsert.teacherIds = sTeachers(stP); paymentToInsert.studentName = uP ? uP.name : ''; } }
+    let newPay;
+    try{ newPay = await insertRow('payments', paymentToInsert); }
+    catch(ePay){
+      if(/teacher_ids|student_name|column/i.test(String((ePay&&(ePay.message||ePay.details))||''))){ delete paymentToInsert.teacherIds; delete paymentToInsert.studentName; newPay = await insertRow('payments', paymentToInsert); alert("To'lov saqlandi, lekin tarix ustunlari bazada yo'q. Supabase'da oylik_tarix.sql ni ishga tushiring."); }
+      else throw ePay;
+    }
     DB.payments.push(newPay);
     const s = DB.students.find(x=>x.id===studentId);
     if(s){
@@ -5661,26 +5671,71 @@ async function deleteMaterial(id){
 }
 
 /* ============ SALARIES (teacher earnings — 50% share) ============ */
+/* To'lov kimning ulushiga tegishli? To'lov kiritilgan paytdagi o'qituvchilar (teacherIds) saqlanadi,
+   shuning uchun o'quvchi keyin o'chirilsa yoki o'qituvchisi o'zgarsa ham o'qituvchi oyligiga ta'sir qilmaydi. */
+function payTeachers(p){
+  const snap = _arr(p.teacherIds).filter(Boolean);
+  if(snap.length) return snap;
+  const st = DB.students.find(x=>x.id===p.studentId);
+  return st ? sTeachers(st) : [];
+}
+function teacherPayments(teacherId){ return DB.payments.filter(p=>payTeachers(p).includes(teacherId)); }
 function teacherEarnings(teacherId, monthPrefix){
   const myStudentIds = DB.students.filter(s=>hasT(s,teacherId)).map(s=>s.id);
   const totalStudents = myStudentIds.length;
   const presentToday = DB.attendance.filter(a=>myStudentIds.includes(a.studentId) && a.date===todayStr() && a.present).length;
+  const mine = teacherPayments(teacherId);
   let relevantPayments;
   if(monthPrefix==='__active__'){
     // Joriy holat: muddati hali o'tmagan (hozir amal qilayotgan) to'lovlar
     const today = todayStr();
-    relevantPayments = DB.payments.filter(p=>myStudentIds.includes(p.studentId) && p.paidUntil && p.paidUntil>=today);
+    relevantPayments = mine.filter(p=>p.paidUntil && p.paidUntil>=today);
   }else{
-    relevantPayments = DB.payments.filter(p=>myStudentIds.includes(p.studentId) && p.date && p.date.slice(0,7)===monthPrefix);
+    relevantPayments = mine.filter(p=>p.date && p.date.slice(0,7)===monthPrefix);
   }
-  const paidStudentIds = new Set(relevantPayments.map(p=>p.studentId));
+  const paidStudentIds = new Set(relevantPayments.map(p=>p.studentId||p.id));
   const total = relevantPayments.reduce((sum,p)=>sum+Number(p.amount||0), 0);
   return {totalStudents, presentToday, paidCount:paidStudentIds.size, total, share: total*0.5};
 }
 function teacherAllTimeShare(teacherId){
-  const myStudentIds = DB.students.filter(s=>hasT(s,teacherId)).map(s=>s.id);
-  const total = DB.payments.filter(p=>myStudentIds.includes(p.studentId)).reduce((sum,p)=>sum+Number(p.amount||0), 0);
+  const total = teacherPayments(teacherId).reduce((sum,p)=>sum+Number(p.amount||0), 0);
   return total*0.5;
+}
+/* Oylar bo'yicha tarix: har oy nechta o'quvchi bo'lgan, qancha pul tushgan, ulushi va oylik sifatida qancha to'langan */
+function teacherMonthlyHistory(teacherId){
+  const pays = teacherPayments(teacherId).filter(p=>p.date);
+  const payouts = DB.teacherPayouts.filter(x=>x.teacherId===teacherId && x.date);
+  const monthsAll = pays.map(p=>p.date.slice(0,7)).concat(payouts.map(x=>x.date.slice(0,7))).sort();
+  if(!monthsAll.length) return [];
+  const cur = todayStr().slice(0,7);
+  const months = []; let [y,m] = monthsAll[0].split('-').map(Number);
+  for(let guard=0; guard<240; guard++){ const mo = y+'-'+String(m).padStart(2,'0'); months.push(mo); if(mo>=cur) break; m++; if(m>12){ m=1; y++; } }
+  return months.reverse().map(mo=>{
+    const start = mo+'-01', end = mo+'-31';
+    const inMonth = pays.filter(p=>p.date.slice(0,7)===mo);
+    const covered = new Set();
+    pays.forEach(p=>{ const until = p.paidUntil || p.date; if(p.date<=end && until>=start) covered.add(p.studentId || p.studentName || p.id); });
+    const total = inMonth.reduce((a,p)=>a+Number(p.amount||0), 0);
+    const paidOut = payouts.filter(x=>x.date.slice(0,7)===mo).reduce((a,x)=>a+Number(x.amount||0), 0);
+    return {month:mo, students:covered.size, paidCount:new Set(inMonth.map(p=>p.studentId||p.id)).size, total, share:total*0.5, paidOut};
+  });
+}
+function teacherHistoryTableHtml(teacherId){
+  const rows = teacherMonthlyHistory(teacherId).map(r=>`<tr>
+    <td><b>${r.month}</b></td><td>${r.students} ta</td><td>${r.paidCount} ta</td>
+    <td>${r.total.toLocaleString()} so'm</td><td><b>${r.share.toLocaleString()} so'm</b></td>
+    <td style="color:var(--green);">${r.paidOut.toLocaleString()} so'm</td></tr>`).join('');
+  return `<table><thead><tr><th>Oy</th><th>O'quvchilari</th><th>To'laganlar</th><th>Tushgan pul</th><th>Ulushi (50%)</th><th>Oylik sifatida berilgan</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="6" class="empty">Hali ma\'lumot yo\'q</td></tr>'}</tbody></table>`;
+}
+function openTeacherHistoryModal(teacherId){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `<div class="modal" style="max-width:760px;"><h3>📅 Oylar tarixi — ${teacherName(teacherId)}</h3>
+    <div style="max-height:60vh;overflow:auto;">${teacherHistoryTableHtml(teacherId)}</div>
+    <div class="hint" style="margin-top:8px;">O'quvchilar soni — shu oyda amal qilgan to'lovi bo'lgan o'quvchilar. O'quvchi keyin o'chirilsa ham tarix o'zgarmaydi.</div>
+    <div class="modal-actions"><button class="btn outline" onclick="this.closest('.modal-bg').remove()">Yopish</button></div></div>`;
+  document.body.appendChild(bg);
 }
 function teacherPaidOutTotal(teacherId){
   return DB.teacherPayouts.filter(p=>p.teacherId===teacherId).reduce((sum,p)=>sum+Number(p.amount||0), 0);
@@ -5721,6 +5776,7 @@ function renderSalariesActive(){
       <td style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn sm gold" onclick="openPayoutModal('${tc.id}')">💰 To'lov/Avans</button>
         <button class="btn sm outline" onclick="openPayoutHistoryModal('${tc.id}')">Tarix</button>
+        <button class="btn sm outline" onclick="openTeacherHistoryModal('${tc.id}')">📅 Oylar tarixi</button>
       </td>
     </tr>`;
   }).join('');
@@ -5869,6 +5925,11 @@ function renderMySalary(u){
       <div class="metric"><div class="lbl">Qolgan balans</div><div class="val" style="color:${balance>0?'var(--rose)':'var(--green)'};">${balance.toLocaleString()} so'm</div></div>
     </div>
     <div class="hint" style="margin-bottom:16px;">"Qolgan balans" — siz hozirgacha ishlagan umumiy ulushingizdan (barcha vaqt bo'yicha), sizga to'langan summalar ayirilgan holda qancha qolganini ko'rsatadi. Har bir o'quvchi to'lovining 50% sizga tegishli.</div>
+    <div class="card" style="margin-bottom:16px;">
+      <h3>📅 Oylar bo'yicha tarix</h3>
+      <div style="overflow:auto;">${teacherHistoryTableHtml(myT.id)}</div>
+      <div class="hint" style="margin-top:8px;">O'quvchi keyin ketsa yoki o'chirilsa ham, o'sha oy uchun tushgan pul va ulushingiz o'zgarmaydi.</div>
+    </div>
     <div class="card">
       <h3>To'lovlar tarixi</h3>
       <table>
