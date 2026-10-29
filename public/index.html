@@ -4369,7 +4369,7 @@ async function addMySlot(teacherId){
 /* ============ TEACHER: MY STUDENTS ============ */
 function renderMyStudents(u){
   const myT = DB.teachers.find(x=>x.userId===u.id);
-  const myStudents = DB.students.filter(s=>hasT(s,myT?myT.id:null));
+  const myStudents = DB.students.filter(s=>hasT(s,myT?myT.id:null) && !s.frozen);
   const rows = myStudents.map(s=>{
     const su = DB.users.find(x=>x.id===s.userId);
     const pay = getPaymentStatus(s.id);
@@ -4923,7 +4923,7 @@ function setPaymentsTeacherFilter(teacherId){
 function renderPayments(u){
   const isAdmin = u.role==='admin';
   const myTeacherId = !isAdmin ? (DB.teachers.find(t=>t.userId===u.id)||{}).id : null;
-  let pool = isAdmin ? DB.students : DB.students.filter(s=>hasT(s,myTeacherId));
+  let pool = (isAdmin ? DB.students : DB.students.filter(s=>hasT(s,myTeacherId))).filter(s=>!s.frozen);
   if(isAdmin && paymentsTeacherFilter){
     pool = pool.filter(s=>hasT(s,paymentsTeacherFilter));
   }
@@ -5770,7 +5770,7 @@ function renderSalariesActive(){
       <td>${e.totalStudents} ta</td>
       <td>${e.paidCount} / ${e.totalStudents} ta</td>
       <td>${e.total.toLocaleString()} so'm</td>
-      <td><b>${e.share.toLocaleString()} so'm</b></td>
+      <td><b>${allTimeShare.toLocaleString()} so'm</b></td>
       <td>${paidOut.toLocaleString()} so'm</td>
       <td><b style="color:${balance>0?'var(--rose)':'var(--green)'};">${balance.toLocaleString()} so'm</b></td>
       <td style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -5795,11 +5795,11 @@ function renderSalariesActive(){
     </div>
     <div class="card">
       <table>
-        <thead><tr><th>O'qituvchi</th><th>Fan</th><th>Jami o'quvchi</th><th>Hozir to'lagan</th><th>Jami summa</th><th>Ulushi (joriy)</th><th>To'langan</th><th>Qolgan balans</th><th></th></tr></thead>
+        <thead><tr><th>O'qituvchi</th><th>Fan</th><th>Jami o'quvchi</th><th>Hozir to'lagan</th><th>Jami summa</th><th>Jami ishlagan ulush<br><small>(barcha vaqt)</small></th><th>Berilgan<br><small>(oylik + avans)</small></th><th>Hali berilmagan<br><small>(qoldiq)</small></th><th></th></tr></thead>
         <tbody>${rows || '<tr><td colspan="9" class="empty">O\'qituvchi yo\'q</td></tr>'}</tbody>
       </table>
     </div>
-    <div class="hint">"Joriy holat" — hali muddati o'tmagan (amal qilayotgan) to'lovlarni ko'rsatadi, oy almashganda yo'qolib qolmaydi. Har bir to'lovning 50% markazga, 50% o'qituvchiga tegishli. "Qolgan balans" — o'qituvchining hozirgача ishlagan ulushidan, unga to'langan summalar ayirilgan holda qancha qolganini ko'rsatadi.</div>`;
+    <div class="hint">Har bir to'lovning 50% markazga, 50% o'qituvchiga tegishli. <b>Hali berilmagan = Jami ishlagan ulush − Berilgan.</b> Qizil rangda bo'lsa — markaz o'qituvchiga shuncha qarz; yashil (0) bo'lsa — hammasi to'langan. Jadvaldagi "Jami summa" — hozir amal qilayotgan to'lovlar yig'indisi.</div>`;
 }
 function renderSalariesHistory(month){
   const rows = DB.teachers.map(tc=>{
@@ -5920,11 +5920,11 @@ function renderMySalary(u){
   return `
     <div class="topbar"><div><h1>💰 Mening oyligim</h1><p>Joriy holat va to'lovlar tarixi</p></div></div>
     <div class="grid cols-3" style="margin-bottom:16px;">
-      <div class="metric"><div class="lbl">Joriy ulush (amal qiladigan to'lovlardan)</div><div class="val">${e.share.toLocaleString()} so'm</div></div>
-      <div class="metric"><div class="lbl">Jami to'langan</div><div class="val" style="color:var(--green);">${paidOut.toLocaleString()} so'm</div></div>
-      <div class="metric"><div class="lbl">Qolgan balans</div><div class="val" style="color:${balance>0?'var(--rose)':'var(--green)'};">${balance.toLocaleString()} so'm</div></div>
+      <div class="metric"><div class="lbl">Jami ishlagan ulushingiz (barcha vaqt)</div><div class="val">${allTimeShare.toLocaleString()} so'm</div></div>
+      <div class="metric"><div class="lbl">Sizga berilgan (oylik + avans)</div><div class="val" style="color:var(--green);">${paidOut.toLocaleString()} so'm</div></div>
+      <div class="metric"><div class="lbl">Hali berilmagan (olishingiz kerak)</div><div class="val" style="color:${balance>0?'var(--rose)':'var(--green)'};">${balance.toLocaleString()} so'm</div></div>
     </div>
-    <div class="hint" style="margin-bottom:16px;">"Qolgan balans" — siz hozirgacha ishlagan umumiy ulushingizdan (barcha vaqt bo'yicha), sizga to'langan summalar ayirilgan holda qancha qolganini ko'rsatadi. Har bir o'quvchi to'lovining 50% sizga tegishli.</div>
+    <div class="hint" style="margin-bottom:16px;">Hisob oddiy: <b>Jami ishlagan ulush − Sizga berilgan = Hali berilmagan.</b> Har bir o'quvchi to'lovining 50% sizga tegishli. Masalan: ishlagan 1 000 000, berilgan 600 000 bo'lsa — hali berilmagan 400 000 so'm.</div>
     <div class="card" style="margin-bottom:16px;">
       <h3>📅 Oylar bo'yicha tarix</h3>
       <div style="overflow:auto;">${teacherHistoryTableHtml(myT.id)}</div>
@@ -5975,7 +5975,7 @@ async function sendBroadcast(){
     recipients = recipients.concat(DB.teachers.filter(t=>t.telegramChatId).map(t=>t.telegramChatId));
   }
   if(target==='all' || target==='students'){
-    recipients = recipients.concat(DB.students.filter(s=>s.telegramChatId).map(s=>s.telegramChatId));
+    recipients = recipients.concat(DB.students.filter(s=>s.telegramChatId && !s.frozen).map(s=>s.telegramChatId));
   }
   recipients = [...new Set(recipients)];
   status.textContent = `Yuborilmoqda... (0/${recipients.length})`;
@@ -6086,7 +6086,7 @@ function renderTelegramReminders(){
   const in3Days = new Date();
   in3Days.setDate(in3Days.getDate()+3);
   const in3DaysStr = in3Days.toISOString().slice(0,10);
-  const relevant = DB.students.filter(s=>s.telegramChatId).map(s=>{
+  const relevant = DB.students.filter(s=>s.telegramChatId && !s.frozen).map(s=>{
     const pay = getPaymentStatus(s.id);
     const recs = DB.payments.filter(p=>p.studentId===s.id).sort((a,b)=>b.paidUntil.localeCompare(a.paidUntil));
     const last = recs[0];
@@ -6139,7 +6139,7 @@ async function sendAllReminders(){
   const in3Days = new Date();
   in3Days.setDate(in3Days.getDate()+3);
   const in3DaysStr = in3Days.toISOString().slice(0,10);
-  const relevant = DB.students.filter(s=>s.telegramChatId).map(s=>{
+  const relevant = DB.students.filter(s=>s.telegramChatId && !s.frozen).map(s=>{
     const pay = getPaymentStatus(s.id);
     const recs = DB.payments.filter(p=>p.studentId===s.id).sort((a,b)=>b.paidUntil.localeCompare(a.paidUntil));
     const last = recs[0];
@@ -6709,7 +6709,7 @@ function exportTableToCSV(filename, headers, rows){
   }
 }
 function exportPaymentsCSV(){
-  const rows = DB.students.map(s=>{
+  const rows = DB.students.filter(s=>!s.frozen).map(s=>{
     const su = DB.users.find(x=>x.id===s.userId);
     const pay = getPaymentStatus(s.id);
     return [su?su.name:'—', s.group||'', pay.label];
