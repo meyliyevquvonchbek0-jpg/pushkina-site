@@ -125,7 +125,7 @@ async function policy(ctx, table, op, filters, payload) {
       P.check = async (rows) => {
         const r = rows[0] || {};
         const un = String(r.username || '').trim();
-        if (un.length < 3 || un.length > 40 || String(r.password || '').length < 4) return "Login yoki parol noto'g'ri formatda";
+        if (un.length < 3 || un.length > 40 || String(r.password || '').length < 4) return "Login kamida 3, parol kamida 4 belgidan iborat bo'lsin";
         const { data } = await sc.from('users').select('id').eq('username', un).limit(1);
         if (data && data.length) return 'Bu login band. Boshqasini tanlang.';
         return null;
@@ -362,6 +362,23 @@ function mount(app) {
       console.error('db', e);
       res.status(500).json({ error: { message: 'Server xatosi' } });
     }
+  });
+
+  app.get('/api/vurl', async (req, res) => {
+    try {
+      if (limited('vu:' + ip(req), 300, 60000)) return res.status(429).json({ error: 'limit' });
+      const ctx = await ctxFromReq(req);
+      if (!ctx) return res.status(401).json({ error: 'auth' });
+      if (!(isStaffCtx(ctx) || (ctx.role === 'student' && ctx.online))) return res.status(403).json({ error: 'forbidden' });
+      const id = String(req.query.id || '');
+      const { data: v } = await sc.from('videos').select('url').eq('id', id).maybeSingle();
+      if (!v || !v.url) return res.status(404).json({ error: 'yoq' });
+      const m = String(v.url).match(/\/storage\/v1\/object\/public\/videos\/([^?]+)/);
+      if (!m) return res.json({ url: v.url });
+      const { data, error } = await sc.storage.from('videos').createSignedUrl(decodeURIComponent(m[1]), 7200);
+      if (error || !data) return res.status(502).json({ error: 'sign' });
+      res.json({ url: data.signedUrl });
+    } catch (e) { console.error('vurl', e); res.status(500).json({ error: 'server' }); }
   });
 
   app.post('/api/rpc', async (req, res) => {

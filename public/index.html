@@ -2272,6 +2272,8 @@ async function submitRegistration(){
   const onlineRequested = document.getElementById('reg-online').checked;
   const err = document.getElementById('reg-err');
   if(!name || !teacherId || !username || !password){ err.textContent = 'Barcha maydonlarni to\'ldiring.'; return; }
+  if(username.length<3){ err.textContent = 'Login kamida 3 belgidan iborat bo\'lsin.'; return; }
+  if(password.length<4){ err.textContent = 'Parol kamida 4 belgidan iborat bo\'lsin.'; return; }
   if(DB.users.some(u=>u.username===username)){ err.textContent = 'Bu login band. Boshqasini tanlang.'; return; }
   const slot = scheduleSlotId ? DB.schedule.find(x=>x.id===scheduleSlotId) : null;
   const group = slot ? slot.subject : '';
@@ -2295,7 +2297,7 @@ async function submitRegistration(){
     console.error(e);
     // yarim qolgan (o'quvchi qatorisiz) foydalanuvchini o'chiramiz — aks holda login band bo'lib qoladi
     if(newUser){ try{ await deleteRow('users', newUser.id); }catch(_){ } }
-    err.textContent = 'Xatolik: ' + ((e && (e.message||e.details)) || 'noma\'lum') + ' — administratorga xabar bering (students_fix.sql kerak).';
+    { const em = (e && (e.message||e.details)) || 'noma\'lum'; err.textContent = /column|schema|relation/i.test(em) ? 'Xatolik: ' + em + ' — administratorga xabar bering (students_fix.sql kerak).' : em; }
     return;
   }
   document.querySelector('.modal-bg').remove();
@@ -3207,8 +3209,9 @@ const OWNER_TABS = ['owner-logins','owner-visibility','owner-viewas','bot-questi
 let VIEW_AS = null, TAB_HIDE = {};
 function realUser(){ return DB.users.find(u=>u.id===session.userId); }
 function tabHiddenFor(u, tab){ return !!(u && !u.owner && tab!=='home' && (TAB_HIDE[tab]||[]).includes(u.role)); }
+function onlineOnly(u){ if(!u || u.role!=='student') return false; const st = DB.students.find(x=>x.userId===u.id); return !!(st && st.onlineApproved); }
 function isOnlineStu(u){ if(!u || u.role!=='student') return true; const st = DB.students.find(x=>x.userId===u.id); return !!(st && st.onlineApproved); }
-function navFor(u){ return (u.owner ? NAV.owner : NAV[u.role]).filter(it=>!tabHiddenFor(u,it.id) && !(it.id==='videos' && u.role==='student' && !isOnlineStu(u))); }
+function navFor(u){ if(onlineOnly(u)) return NAV.student.filter(it=>it.id==='videos' || it.id==='tests'); return (u.owner ? NAV.owner : NAV[u.role]).filter(it=>!tabHiddenFor(u,it.id) && !(it.id==='videos' && u.role==='student' && !isOnlineStu(u))); }
 async function loadFlags(){
   try{ const {data,error} = await sb.rpc('get_flags'); if(error) return; const row = (data||[]).find(r=>r.key==='tabs_hidden'); TAB_HIDE = row && row.value ? JSON.parse(row.value) : {}; }catch(e){}
 }
@@ -3267,6 +3270,7 @@ function renderMain(){
   let html = '';
   if(OWNER_TABS.includes(activeTab) && !(realUser()&&realUser().owner && !VIEW_AS) && !(activeTab==='bot-questions' && u.owner)){ activeTab = 'home'; }
   if(tabHiddenFor(u, activeTab)){ activeTab = 'home'; }
+  if(onlineOnly(u) && activeTab==='home'){ activeTab = 'videos'; }
   if(activeTab==='home') html = renderHome(u);
   else if(activeTab==='teachers') html = renderTeachers();
   else if(activeTab==='students') html = renderStudents();
@@ -5066,9 +5070,9 @@ function renderVideos(u){
   const seqPrevOf = v=>{ let p = null; for(const x of seqAsc){ if(x.id===v.id) break; if(x.teacherId===v.teacherId) p = x; } return p; };
   const seqDone = vd=>{
     const lt = DB.tests.find(t=>!t.isLive && t.videoId===vd.id);
-    if(!lt) return true;
     const vp = DB.videoProgress.find(x=>x.studentId===seqS.id && x.videoId===vd.id);
     if(!(vp && vp.completed)) return false;
+    if(!lt) return true;
     if(!DB.testQuestions.some(q=>q.testId===lt.id)) return true;
     const at = DB.testAttempts.filter(a=>a.testId===lt.id && a.studentId===seqS.id);
     if(at.some(a=>a.total>0 && a.score/a.total>=0.6)) return true;
@@ -5089,23 +5093,13 @@ function renderVideos(u){
       s = DB.students.find(x=>x.userId===u.id);
       if(s && s.onlineApproved) isOnlineStudent = true;
     }
+    if(u.role!=='student' && /\.(mp4|webm|ogg)(\?|$)/i.test(v.url)){ const pid = `plain-video-${v.id}`; embed = `<video id="${pid}" controls controlsList="nodownload" disablePictureInPicture preload="metadata" oncontextmenu="return false" style="width:100%;display:block;"></video>`; signVideoInto(pid, v); }
     const linkedTest = DB.tests.find(t=>!t.isLive && t.videoId===v.id);
     const needsLock = isOnlineStudent && linkedTest;
     if(needsLock){
       const vp = DB.videoProgress.find(x=>x.studentId===s.id && x.videoId===v.id);
       const completed = vp ? vp.completed : false;
-      const isDirectFile = /\.(mp4|webm|ogg)(\?|$)/i.test(v.url);
-      const isYoutube = /youtube\.com|youtu\.be/.test(v.url);
-      if(isDirectFile){
-        const elId = `restricted-video-${v.id}`;
-        embed = `<video id="${elId}" controls controlsList="nodownload" preload="metadata" src="${v.url}" style="width:100%;display:block;"></video>`;
-        setupRestrictedVideoTag(elId, v.id, vp?vp.maxWatchedSeconds:0);
-      }else if(isYoutube){
-        const elId = `restricted-yt-${v.id}`;
-        const ytId = youtubeIdFromUrl(v.url);
-        embed = `<div id="${elId}" style="width:100%;height:180px;"></div>`;
-        setupRestrictedYouTube(elId, v.id, ytId);
-      }
+      { const re = restrictedEmbedFor(v, s); if(re) embed = re; }
       const qCount = DB.testQuestions.filter(q=>q.testId===linkedTest.id).length;
       const attempts = s ? DB.testAttempts.filter(a=>a.testId===linkedTest.id && a.studentId===s.id).sort((a,b)=>b.score-a.score) : [];
       const best = attempts[0];
@@ -5128,6 +5122,7 @@ function renderVideos(u){
       }
       reinforcement = testBlock + hwBlock;
     }else if(isOnlineStudent){
+      { const re = restrictedEmbedFor(v, s); if(re) embed = re; }
       const linkedHw = DB.homework.find(h=>h.videoId===v.id);
       if(linkedHw){
         const st = DB.homeworkStatus.find(x=>x.homeworkId===linkedHw.id && x.studentId===s.id);
@@ -5204,6 +5199,31 @@ async function saveVideoProgress(videoId, maxWatchedSeconds, completed){
     if(notice) notice.textContent = "✅ Video tugatildi — endi testni boshlashingiz mumkin";
   }
 }
+async function signVideoInto(elId, v){
+  let url = v.url;
+  if(PROXY && /\/storage\/v1\/object\/public\/videos\//.test(v.url||'')){
+    try{
+      const r = await fetch('/api/vurl?id='+encodeURIComponent(v.id), {headers:authHeaders(), cache:'no-store'});
+      if(r.ok){ const j = await r.json(); if(j && j.url) url = j.url; }
+    }catch(e){}
+  }
+  for(let i=0;i<40;i++){ const el = document.getElementById(elId); if(el){ el.src = url; return; } await new Promise(r=>setTimeout(r,50)); }
+}
+function restrictedEmbedFor(v, s){
+  const vp = DB.videoProgress.find(x=>x.studentId===s.id && x.videoId===v.id);
+  if(/\.(mp4|webm|ogg)(\?|$)/i.test(v.url||'')){
+    const elId = `restricted-video-${v.id}`;
+    setupRestrictedVideoTag(elId, v.id, vp?vp.maxWatchedSeconds:0);
+    signVideoInto(elId, v);
+    return `<video id="${elId}" controls controlsList="nodownload noremoteplayback" disablePictureInPicture preload="metadata" oncontextmenu="return false" style="width:100%;display:block;"></video>`;
+  }
+  if(/youtube\.com|youtu\.be/.test(v.url||'')){
+    const elId = `restricted-yt-${v.id}`;
+    setupRestrictedYouTube(elId, v.id, youtubeIdFromUrl(v.url));
+    return `<div id="${elId}" style="width:100%;height:180px;"></div>`;
+  }
+  return null;
+}
 function setupRestrictedVideoTag(elId, videoId, startMaxSeconds){
   setTimeout(()=>{
     const video = document.getElementById(elId);
@@ -5212,12 +5232,14 @@ function setupRestrictedVideoTag(elId, videoId, startMaxSeconds){
     video.addEventListener('seeking', ()=>{
       if(video.currentTime > maxWatched + 1.5){ video.currentTime = maxWatched; }
     });
+    video.addEventListener('ratechange', ()=>{ if(video.playbackRate > 2) video.playbackRate = 2; });
     video.addEventListener('timeupdate', ()=>{
-      if(video.currentTime > maxWatched) maxWatched = video.currentTime;
-      if(video.duration && video.currentTime >= video.duration - 0.5){
+      if(video.currentTime > maxWatched && video.currentTime - maxWatched < 3) maxWatched = video.currentTime;
+      if(video.duration && video.currentTime >= video.duration - 0.5 && maxWatched >= video.duration - 3){
         saveVideoProgress(videoId, maxWatched, true);
       }
     });
+    video.addEventListener('ended', ()=>{ if(video.duration && maxWatched >= video.duration - 3) saveVideoProgress(videoId, video.duration, true); });
     video.addEventListener('pause', ()=>{ saveVideoProgress(videoId, maxWatched, false); });
   }, 0);
 }
@@ -5295,7 +5317,7 @@ async function saveVideo(){
       const {data: urlData} = sb.storage.from('videos').getPublicUrl(path);
       finalUrl = urlData.publicUrl;
     }catch(e){
-      err.textContent = 'Video yuklashda xatolik yuz berdi. Qayta urinib ko\'ring.';
+      err.textContent = 'Video yuklashda xatolik: ' + ((e && (e.message||e.error||e.statusCode)) || 'noma\'lum') + (/size|large|exceed|413/i.test(String((e&&e.message)||'')) ? ' (fayl hajmi cheklovi: Supabase Storage sozlamalarini tekshiring)' : '');
       console.error(e);
       btn.disabled = false; btn.textContent = 'Saqlash';
       return;
@@ -6910,7 +6932,7 @@ function attemptsOf(testId, studentId){
 function renderStudentTests(u){
   const s = DB.students.find(x=>x.userId===u.id);
   const stuOnline = isOnlineStu(u);
-  const list = DB.tests.filter(t=>!t.isLive && sTeachers(s).includes(t.teacherId) && (stuOnline || !t.videoId));
+  const list = DB.tests.filter(t=>!t.isLive && sTeachers(s).includes(t.teacherId) && (stuOnline ? !!t.videoId : !t.videoId));
   const rows = list.map(test=>{
     const maxAttempts = testMaxAttempts(test);
     const attempts = attemptsOf(test.id, s.id);
