@@ -2240,19 +2240,29 @@ function openRegisterModal(){
   bg.innerHTML = `
     <div class="modal">
       <h3>O'quvchi sifatida ro'yxatdan o'tish</h3>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <button type="button" class="btn sm gold" id="reg-mode-off" onclick="regSetMode('off')" style="flex:1;">🏫 Markazda o'qiyman</button>
+        <button type="button" class="btn sm outline" id="reg-mode-on" onclick="regSetMode('on')" style="flex:1;">🖥️ Onlayn dars</button>
+      </div>
+      <input type="hidden" id="reg-mode" value="off">
       <label>Ism familiya</label><input type="text" id="reg-name">
+      <div id="reg-online-note" style="display:none;font-size:13px;margin:4px 0 8px;color:var(--text-dim);">Onlayn dars: video darslar va testlar. O'qituvchi: <b id="reg-online-teacher"></b>. Dars vaqti kerak emas, so'rov admin tomonidan tasdiqlanadi.</div>
+      <div id="reg-offline-block">
       <label>O'qituvchingiz</label>
       <select id="reg-teacher" onchange="onTeacherSelectChange('reg-teacher','reg-schedule')"><option value="">— tanlang —</option>${teacherOpts}</select>
       <label>Dars vaqti</label>
       <select id="reg-schedule"><option value="">— avval o'qituvchini tanlang —</option></select>
       ${extraBlockHtml('reg',null)}
+      </div>
       <label>Login (o'zingiz tanlang)</label><input type="text" id="reg-username">
       <label>Parol</label><input type="password" id="reg-password">
+      <div id="reg-offline-block2">
       <label>Telegram Chat ID (ixtiyoriy, eslatmalar uchun)</label><input type="text" id="reg-telegram" placeholder="masalan: 123456789">
       <label style="display:flex;align-items:center;gap:8px;font-weight:normal;margin-top:6px;">
-        <input type="checkbox" id="reg-online" style="width:auto;"> 🖥️ Onlayn darslarda qatnashmoqchiman
+        <input type="checkbox" id="reg-online" style="width:auto;"> 🖥️ Onlayn darslarda ham qatnashmoqchiman
       </label>
       <div class="hint" style="margin-top:-4px;">Bu so'rov admin tomonidan alohida tasdiqlanadi.</div>
+      </div>
       <div class="err" id="reg-err"></div>
       <div class="modal-actions">
         <button class="btn outline" onclick="this.closest('.modal-bg').remove()">Bekor qilish</button>
@@ -2262,15 +2272,28 @@ function openRegisterModal(){
     </div>`;
   document.body.appendChild(bg);
 }
+function regOnlineTeacherId(){ const t = DB.teachers.find(x=>/shoxrux/i.test(teacherName(x.id))); return t ? t.id : null; }
+function regSetMode(m){
+  document.getElementById('reg-mode').value = m;
+  const on = m==='on';
+  document.getElementById('reg-offline-block').style.display = on ? 'none' : '';
+  document.getElementById('reg-offline-block2').style.display = on ? 'none' : '';
+  const note = document.getElementById('reg-online-note'); note.style.display = on ? '' : 'none';
+  const tid = regOnlineTeacherId(); document.getElementById('reg-online-teacher').textContent = tid ? teacherName(tid) : '—';
+  document.getElementById('reg-mode-on').className = 'btn sm ' + (on?'gold':'outline');
+  document.getElementById('reg-mode-off').className = 'btn sm ' + (on?'outline':'gold');
+}
 async function submitRegistration(){
+  const regOn = document.getElementById('reg-mode').value==='on';
   const name = document.getElementById('reg-name').value.trim();
-  const teacherId = document.getElementById('reg-teacher').value;
-  const scheduleSlotId = document.getElementById('reg-schedule').value || null;
+  const teacherId = regOn ? regOnlineTeacherId() : document.getElementById('reg-teacher').value;
+  const scheduleSlotId = regOn ? null : (document.getElementById('reg-schedule').value || null);
   const username = document.getElementById('reg-username').value.trim();
   const password = document.getElementById('reg-password').value;
-  const telegramChatId = document.getElementById('reg-telegram').value.trim();
-  const onlineRequested = document.getElementById('reg-online').checked;
+  const telegramChatId = regOn ? '' : document.getElementById('reg-telegram').value.trim();
+  const onlineRequested = regOn ? true : document.getElementById('reg-online').checked;
   const err = document.getElementById('reg-err');
+  if(regOn && !teacherId){ err.textContent = 'Onlayn o\'qituvchi topilmadi. Administratorga xabar bering.'; return; }
   if(!name || !teacherId || !username || !password){ err.textContent = 'Barcha maydonlarni to\'ldiring.'; return; }
   if(username.length<3){ err.textContent = 'Login kamida 3 belgidan iborat bo\'lsin.'; return; }
   if(password.length<4){ err.textContent = 'Parol kamida 4 belgidan iborat bo\'lsin.'; return; }
@@ -2282,7 +2305,7 @@ async function submitRegistration(){
     newUser = await insertRow('users', {username, password, role:'student', name, phone:'', status:'pending'});
     let newStudent;
     try{
-      const exR = readExtras('reg', teacherId);
+      const exR = regOn ? {extraTeacherIds:[], extraSlotIds:[]} : readExtras('reg', teacherId);
       const rowR = {userId:newUser.id, group, teacherId, telegramChatId, scheduleSlotId, onlineRequested, onlineApproved:false};
       if(exR.extraTeacherIds.length||exR.extraSlotIds.length) Object.assign(rowR, exR);
       newStudent = await insertRow('students', rowR);
