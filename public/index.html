@@ -907,8 +907,8 @@ const FIELD_MAP = {
   schedule: {teacherId:'teacher_id'},
   attendance: {studentId:'student_id', tasksDone:'tasks_done'},
   payments: {studentId:'student_id', paidUntil:'paid_until', installmentPart:'installment_part', installmentTotal:'installment_total', nextInstallmentAmount:'next_installment_amount'},
-  videos: {teacherId:'teacher_id'},
-  materials: {teacherId:'teacher_id'},
+  videos: {teacherId:'teacher_id', lessonNo:'lesson_no'},
+  materials: {teacherId:'teacher_id', videoId:'video_id'},
   announcements: {authorId:'author_id'},
   ratings: {studentId:'student_id', teacherId:'teacher_id'},
   daily_totals: {teacherId:'teacher_id', totalTasks:'total_tasks', title:'title'},
@@ -3234,7 +3234,7 @@ function realUser(){ return DB.users.find(u=>u.id===session.userId); }
 function tabHiddenFor(u, tab){ return !!(u && !u.owner && tab!=='home' && (TAB_HIDE[tab]||[]).includes(u.role)); }
 function onlineOnly(u){ if(!u || u.role!=='student') return false; const st = DB.students.find(x=>x.userId===u.id); return !!(st && st.onlineApproved); }
 function isOnlineStu(u){ if(!u || u.role!=='student') return true; const st = DB.students.find(x=>x.userId===u.id); return !!(st && st.onlineApproved); }
-function navFor(u){ if(onlineOnly(u)) return NAV.student.filter(it=>it.id==='videos' || it.id==='tests'); return (u.owner ? NAV.owner : NAV[u.role]).filter(it=>!tabHiddenFor(u,it.id) && !(it.id==='videos' && u.role==='student' && !isOnlineStu(u))); }
+function navFor(u){ if(onlineOnly(u)) return NAV.student.filter(it=>it.id==='videos' || it.id==='games'); return (u.owner ? NAV.owner : NAV[u.role]).filter(it=>!tabHiddenFor(u,it.id) && !(it.id==='videos' && u.role==='student' && !isOnlineStu(u))); }
 async function loadFlags(){
   try{ const {data,error} = await sb.rpc('get_flags'); if(error) return; const row = (data||[]).find(r=>r.key==='tabs_hidden'); TAB_HIDE = row && row.value ? JSON.parse(row.value) : {}; }catch(e){}
 }
@@ -5076,6 +5076,154 @@ async function savePayment(studentId){
 }
 
 /* ============ VIDEOS ============ */
+/* ============ DARSLAR RO'YXATI (onlayn o'quvchi kurs ko'rinishi) ============ */
+let courseState = {open:null};
+function lessonSort(list){
+  return list.slice().sort((a,b)=>{
+    const na = (a.lessonNo==null||a.lessonNo==='') ? 1e9 : Number(a.lessonNo);
+    const nb = (b.lessonNo==null||b.lessonNo==='') ? 1e9 : Number(b.lessonNo);
+    if(na!==nb) return na-nb;
+    const d = String(a.date||'').localeCompare(String(b.date||''));
+    if(d) return d;
+    return String(a.title||'').localeCompare(String(b.title||''), undefined, {numeric:true});
+  });
+}
+function lessonLabel(v, idx){ return (v.lessonNo!=null && v.lessonNo!=='') ? v.lessonNo : (idx+1); }
+function pctOf(a){ return a && a.total>0 ? Math.round(a.score*100/a.total) : 0; }
+function lessonStats(v, s){
+  const test = DB.tests.find(t=>!t.isLive && t.videoId===v.id);
+  const vp = DB.videoProgress.find(x=>x.studentId===s.id && x.videoId===v.id);
+  const nq = test ? DB.testQuestions.filter(q=>q.testId===test.id).length : 0;
+  const attempts = test ? attemptsOf(test.id, s.id) : [];
+  let best = null; attempts.forEach(a=>{ if(!best || pctOf(a)>pctOf(best)) best = a; });
+  const watched = !!(vp && vp.completed);
+  const hasTest = !!(test && nq>0);
+  let passed = false, exhausted = false;
+  if(hasTest){ passed = attempts.some(a=>pctOf(a)>=60); exhausted = attempts.length>=testMaxAttempts(test); }
+  return {test, vp, nq, attempts, first:attempts[0]||null, best, watched, hasTest, passed, exhausted, done: watched && (!hasTest || passed || exhausted)};
+}
+const MAT_KIND = {lugat:"📖 Lug'at", kitob:"📚 Qo'shimcha kitob", boshqa:'📎 Material'};
+function lessonMaterials(videoId){
+  const rank = {lugat:0, kitob:1, boshqa:2};
+  return DB.materials.filter(m=>m.videoId===videoId).sort((a,b)=>((rank[a.kind]??2)-(rank[b.kind]??2)) || String(a.date||'').localeCompare(String(b.date||'')));
+}
+function wordsTableHtml(note){
+  const rows = String(note||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean).map(l=>{
+    const m = l.match(/^(.*?)\s+[-–—:]\s+(.*)$/) || l.match(/^(.*?)\t+(.*)$/);
+    return m ? [m[1].trim(), m[2].trim()] : [l, ''];
+  });
+  if(!rows.length) return '';
+  return `<table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:14px;">${rows.map(r=>`<tr><td style="padding:5px 8px;border-bottom:1px solid var(--border);font-weight:600;">${wEsc(r[0])}</td><td style="padding:5px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">${wEsc(r[1])}</td></tr>`).join('')}</table>`;
+}
+function courseOpen(id){ courseState.open = id; renderMain(); try{ window.scrollTo(0,0); }catch(e){} }
+function courseLockedClick(prevTitle){ alert('Bu dars hali yopiq. Avval "'+prevTitle+'" darsini oxirigacha ko\'rib, testini topshiring.'); }
+function renderCourse(u){
+  const s = DB.students.find(x=>x.userId===u.id);
+  if(!s) return '<div class="empty">Ma\'lumot topilmadi</div>';
+  const teachers = sTeachers(s);
+  const ordered = lessonSort(DB.videos.filter(v=>teachers.includes(v.teacherId)));
+  const stats = ordered.map(v=>lessonStats(v, s));
+  if(courseState.open){
+    const i = ordered.findIndex(v=>v.id===courseState.open);
+    if(i>=0 && (i===0 || stats[i-1].done)) return renderCourseDetail(u, s, ordered, stats, i);
+    courseState.open = null;
+  }
+  const doneCount = stats.filter(x=>x.done).length;
+  const pct = ordered.length ? Math.round(doneCount*100/ordered.length) : 0;
+  const cards = ordered.map((v,i)=>{
+    const st = stats[i], n = lessonLabel(v, i);
+    const locked = i>0 && !stats[i-1].done;
+    const mats = lessonMaterials(v.id).length;
+    const hw = DB.homework.filter(h=>h.videoId===v.id).length;
+    const vidLine = st.watched ? '<span style="color:var(--green);">✅ ko\'rildi</span>' : ((st.vp && st.vp.maxWatchedSeconds>0) ? '⏳ ko\'rilmoqda' : 'hali ko\'rilmagan');
+    let testLine = '';
+    if(st.hasTest){
+      if(st.attempts.length){
+        testLine = `🧪 <b>${n}.2 Test:</b> birinchi ishlaganda <b>${pctOf(st.first)}%</b> · eng yaxshisi <b>${pctOf(st.best)}%</b> <span style="color:var(--text-dim);">(${st.attempts.length} urinish)</span>`;
+        if(st.passed) testLine += ' <span class="pill green">topshirildi</span>';
+      }else{
+        testLine = `🧪 <b>${n}.2 Test:</b> hali ishlanmagan`;
+      }
+    }
+    const extra = [];
+    if(mats) extra.push('📎 '+mats+' ta material');
+    if(hw) extra.push('📝 '+hw+' ta vazifa');
+    const badge = st.done ? '<span class="pill green">✅ Tugatilgan</span>' : (locked ? '<span class="pill gray">🔒 Yopiq</span>' : ((st.watched||st.attempts.length||(st.vp&&st.vp.maxWatchedSeconds>0)) ? '<span class="pill gold">Jarayonda</span>' : '<span class="pill gray">Boshlanmagan</span>'));
+    const prevTitle = i>0 ? ordered[i-1].title : '';
+    return `<div class="card" style="margin-bottom:12px;${locked?'opacity:.7;':''}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+        <div style="font-size:17px;font-weight:700;">${n}-dars. ${wEsc(v.title)}</div>${badge}
+      </div>
+      <div style="font-size:13.5px;line-height:1.7;margin-top:8px;">
+        <div>🎬 <b>${n}.1 Video:</b> ${vidLine}</div>
+        ${testLine?`<div>${testLine}</div>`:''}
+        ${extra.length?`<div style="color:var(--text-dim);">${extra.join(' · ')}</div>`:''}
+      </div>
+      <div style="margin-top:10px;">${locked ? `<button class="btn sm outline" onclick="courseLockedClick('${String(prevTitle).replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">🔒 Yopiq: avval oldingi darsni tugating</button>` : `<button class="btn sm gold" onclick="courseOpen('${v.id}')">${st.done?'Qayta ko\'rish →':'Darsni ochish →'}</button>`}</div>
+    </div>`;
+  }).join('');
+  const tnames = teachers.map(id=>teacherName(id)).filter(Boolean).join(', ');
+  return `
+    <div class="topbar"><div><h1>${t('Video darslar')}</h1><p>${tnames?'O\'qituvchi: '+wEsc(tnames)+' · ':''}${doneCount}/${ordered.length} dars tugatilgan</p></div></div>
+    <div class="card" style="margin-bottom:14px;"><div style="font-size:13px;color:var(--text-dim);margin-bottom:6px;">Umumiy o'zlashtirish: ${pct}%</div>
+      <div style="height:10px;border-radius:6px;background:var(--border);overflow:hidden;"><div style="height:100%;width:${pct}%;background:var(--green,#3aa56b);"></div></div></div>
+    ${cards || '<div class="empty">Hozircha darslar yo\'q. Tez orada yuklanadi.</div>'}`;
+}
+function renderCourseDetail(u, s, ordered, stats, i){
+  const v = ordered[i], st = stats[i], n = lessonLabel(v, i);
+  let k = 1; const blocks = [];
+  const emb = restrictedEmbedFor(v, s) || toEmbeddable(v.url);
+  blocks.push(`<div class="card" style="margin-bottom:12px;"><div style="font-weight:700;margin-bottom:8px;">🎬 ${n}.${k++} Video dars</div><div class="video-card" style="margin:0;">${emb}</div></div>`);
+  if(st.test){
+    const max = testMaxAttempts(st.test);
+    const left = max===Infinity ? Infinity : Math.max(0, max - st.attempts.length);
+    const hist = st.attempts.map((a,j)=>`${j+1}-urinish: <b>${pctOf(a)}%</b> (${a.score}/${a.total})`).join(' · ');
+    const canStart = st.watched && st.nq>0 && left>0;
+    blocks.push(`<div class="card" style="margin-bottom:12px;"><div style="font-weight:700;margin-bottom:8px;">🧪 ${n}.${k++} Test: ${wEsc(st.test.title||'')}</div>
+      ${st.attempts.length ? `<div style="font-size:14px;line-height:1.7;">Birinchi ishlaganda: <b>${pctOf(st.first)}%</b> · Eng yaxshisi: <b>${pctOf(st.best)}%</b>${st.passed?' <span class="pill green">topshirildi</span>':''}<div style="font-size:12.5px;color:var(--text-dim);">${hist}</div></div>` : '<div style="font-size:14px;color:var(--text-dim);">Hali ishlanmagan</div>'}
+      ${!st.watched ? `<div id="video-lock-notice-${v.id}" style="font-size:12.5px;color:var(--rose);margin-top:6px;">🔒 Avval videoni oxirigacha tomosha qiling</div>` : ''}
+      <button class="btn sm gold" id="test-start-btn-${v.id}" style="margin-top:8px;" ${canStart?'':'disabled'} onclick="startTest('${st.test.id}')">${st.attempts.length?'Qayta ishlash':'Testni boshlash'}${left===Infinity?'':' ('+left+' qoldi)'}</button>
+      ${st.nq===0?'<div style="font-size:12px;color:var(--text-dim);margin-top:4px;">Test savollari hali qo\'shilmagan.</div>':''}
+    </div>`);
+  }
+  lessonMaterials(v.id).forEach(m=>{
+    const kd = MAT_KIND[m.kind] || MAT_KIND.boshqa;
+    blocks.push(`<div class="card" style="margin-bottom:12px;"><div style="font-weight:700;">${kd.split(' ')[0]} ${n}.${k++} ${kd.slice(kd.indexOf(' ')+1)}: ${wEsc(m.title)}</div>
+      ${m.url ? `<a href="${m.url}" target="_blank" rel="noopener" class="btn sm outline" style="margin-top:8px;display:inline-block;">${materialKind(m.url)[0]} Ochish / yuklab olish</a>` : ''}
+      ${m.note ? wordsTableHtml(m.note) : ''}
+    </div>`);
+  });
+  DB.homework.filter(h=>h.videoId===v.id).forEach(h=>{
+    const hs = DB.homeworkStatus.find(x=>x.homeworkId===h.id && x.studentId===s.id);
+    blocks.push(`<div class="card" style="margin-bottom:12px;"><div style="font-weight:700;">📝 ${n}.${k++} Uy vazifasi: ${wEsc(h.title||'')}</div>
+      <div style="font-size:13.5px;color:var(--text-dim);margin:6px 0;">${wEsc(h.description||'')}</div>
+      <button class="btn sm ${hs&&hs.done?'gold':'outline'}" onclick="toggleHomeworkDone('${h.id}','${s.id}')">${hs&&hs.done?'✅ Bajarildi':'Bajarildi deb belgilash'}</button></div>`);
+  });
+  return `
+    <div class="topbar"><div><h1>${n}-dars. ${wEsc(v.title)}</h1><p>${teacherName(v.teacherId)}</p></div>
+      <button class="btn outline" onclick="courseOpen(null)">← Darslar ro'yxati</button></div>
+    ${blocks.join('')}`;
+}
+function staffLessonTools(v, u){
+  const mats = lessonMaterials(v.id).length;
+  const tst = DB.tests.find(t=>!t.isLive && t.videoId===v.id);
+  const hw = DB.homework.filter(h=>h.videoId===v.id).length;
+  return `<div style="font-size:12.5px;color:var(--text-dim);margin-top:6px;">${tst?'🧪 Test bor':'🧪 Test yo\'q'} · 📎 ${mats} material · 📝 ${hw} vazifa</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
+      <button class="btn sm outline" onclick="openMaterialModal('${u.role}','${v.id}')">+ Kitob / lug'at</button>
+      <button class="btn sm outline" onclick="editLesson('${v.id}')">✏️ Raqam / nom</button>
+    </div>`;
+}
+async function editLesson(id){
+  const v = DB.videos.find(x=>x.id===id); if(!v) return;
+  const nTxt = prompt("Dars raqami (bo'sh qoldirsangiz, yuklangan tartibda bo'ladi):", v.lessonNo==null?'':v.lessonNo); if(nTxt===null) return;
+  const title = prompt('Dars nomi:', v.title); if(title===null) return;
+  const lessonNo = String(nTxt).trim()==='' ? null : parseInt(nTxt,10);
+  if(lessonNo!==null && isNaN(lessonNo)){ alert("Raqam noto'g'ri"); return; }
+  const newTitle = title.trim() || v.title;
+  try{ await updateRow('videos', id, {lessonNo, title:newTitle}); v.lessonNo = lessonNo; v.title = newTitle; renderMain(); }
+  catch(e){ alert('Saqlanmadi: '+((e&&e.message)||'')+' (dars_tuzilma.sql ishga tushirilganmi?)'); }
+}
 let videosTeacherFilter = null;
 function setVideosTeacherFilter(teacherId){
   videosTeacherFilter = teacherId || null;
@@ -5083,6 +5231,7 @@ function setVideosTeacherFilter(teacherId){
 }
 function renderVideos(u){
   if(u.role==='student' && !isOnlineStu(u)) return `<div class="topbar"><div><h1>${t('Video darslar')}</h1></div></div><div class="card"><div class="empty">Video darslar faqat onlayn o'quvchilar uchun. Onlayn ro'yxatdan o'tish uchun administratorga murojaat qiling.</div></div>`;
+  if(u.role==='student' && onlineOnly(u)) return renderCourse(u);
   const canAdd = u.role==='admin' || u.role==='teacher';
   let videoList = DB.videos.slice();
   if(videosTeacherFilter) videoList = videoList.filter(v=>v.teacherId===videosTeacherFilter);
@@ -5101,7 +5250,7 @@ function renderVideos(u){
     if(at.some(a=>a.total>0 && a.score/a.total>=0.6)) return true;
     return at.length>=testMaxAttempts(lt);
   };
-  const cards = videoList.sort((a,b)=> seqOn ? (a.date||'').localeCompare(b.date||'') : b.date.localeCompare(a.date)).map(v=>{
+  const cards = lessonSort(videoList).map((v, vIdx)=>{
     if(seqOn){
       const pv = seqPrevOf(v);
       if(pv && !seqDone(pv)){
@@ -5159,8 +5308,9 @@ function renderVideos(u){
     return `<div class="video-card">
       ${embed}
       <div class="vc-body">
-        <div class="vc-title">${v.title}</div>
+        <div class="vc-title">${canAdd ? lessonLabel(v, vIdx)+'-dars. ' : ''}${v.title}</div>
         <div class="vc-meta">${teacherName(v.teacherId)} · ${v.date}</div>
+        ${canAdd ? staffLessonTools(v, u) : ''}
         ${reinforcement}
       </div>
     </div>`;
@@ -5304,6 +5454,7 @@ function openVideoModal(){
     <div class="modal">
       <h3>Yangi video dars</h3>
       <label>Sarlavha</label><input type="text" id="v-title" placeholder="masalan: A2 — 5-dars">
+      <label>Dars raqami (ixtiyoriy, masalan: 1)</label><input type="number" id="v-no" min="1" placeholder="bo'sh qoldirsangiz yuklangan tartibda">
       <label>O'qituvchi</label>
       <select id="v-teacher"><option value="">— tanlang —</option>${teacherOptsHtml}</select>
       <label>Video faylini yuklash (maks. 2 GB)</label>
@@ -5346,7 +5497,15 @@ async function saveVideo(){
       return;
     }
   }
-  const newVideo = await insertRow('videos', {title, teacherId: teacherId||null, url: finalUrl, date:todayStr()});
+  const noVal = parseInt((document.getElementById('v-no')||{}).value, 10);
+  const vPayload = {title, teacherId: teacherId||null, url: finalUrl, date:todayStr()};
+  if(!isNaN(noVal)) vPayload.lessonNo = noVal;
+  let newVideo;
+  try{ newVideo = await insertRow('videos', vPayload); }
+  catch(e1){
+    if('lessonNo' in vPayload && /lesson_no|column/i.test(String((e1&&(e1.message||e1.details))||''))){ delete vPayload.lessonNo; newVideo = await insertRow('videos', vPayload); alert("Video saqlandi, lekin dars raqami saqlanmadi: Supabase'da dars_tuzilma.sql ni ishga tushiring."); }
+    else { err.textContent = 'Saqlanmadi: '+((e1&&(e1.message||e1.details))||"noma'lum"); btn.disabled = false; btn.textContent = 'Saqlash'; return; }
+  }
   DB.videos.push(newVideo);
   document.querySelector('.modal-bg').remove();
   renderMain();
@@ -5379,7 +5538,7 @@ function renderMaterials(u){
         <div class="vc-title"><span style="font-size:22px;vertical-align:middle;margin-right:6px;">${materialKind(m.url)[0]}</span>${m.title}</div>
         <div class="vc-meta">${materialKind(m.url)[1]} · ${teacherName(m.teacherId)} · ${m.date}</div>
         <div style="margin-top:10px;display:flex;gap:8px;">
-          <a href="${m.url}" target="_blank" rel="noopener" class="btn sm outline">${materialKind(m.url)[1]==='Havola'?'Ochish':'Ochish / yuklab olish'}</a>
+          ${m.url ? `<a href="${m.url}" target="_blank" rel="noopener" class="btn sm outline">${materialKind(m.url)[1]==='Havola'?'Ochish':'Ochish / yuklab olish'}</a>` : (m.note ? '<span style="font-size:12.5px;color:var(--text-dim);">📖 Lug\'at darsda</span>' : '')}
           ${canDelete(m) ? `<button class="icon-btn rose" onclick="deleteMaterial('${m.id}')">O'chirish</button>` : ''}
         </div>
       </div>
@@ -5400,8 +5559,11 @@ function renderMaterials(u){
     ${teacherChips}
     <div class="grid cols-3">${cards || '<div class="empty">Hozircha material yo\'q</div>'}</div>`;
 }
-function openMaterialModal(role){
+function openMaterialModal(role, presetVideoId){
   const teacherOptsHtml = DB.teachers.map(t=>`<option value="${t.id}">${teacherName(t.id)}</option>`).join('');
+  const meU = curUser(); const meT = role==='teacher' ? DB.teachers.find(x=>x.userId===meU.id) : null;
+  const lessonList = lessonSort(DB.videos.filter(v=>role==='admin' || (meT && v.teacherId===meT.id)));
+  const lessonOpts = lessonList.map((v,i)=>`<option value="${v.id}" ${presetVideoId===v.id?'selected':''}>${lessonLabel(v,i)}-dars. ${wEsc(v.title)}${role==='admin'?' ('+wEsc(teacherName(v.teacherId))+')':''}</option>`).join('');
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.innerHTML = `
@@ -5409,6 +5571,12 @@ function openMaterialModal(role){
       <h3>Yangi material</h3>
       <label>Sarlavha</label><input type="text" id="m-title" placeholder="masalan: A2 — grammatika qo'llanmasi">
       ${role==='admin' ? `<label>O'qituvchi</label><select id="m-teacher"><option value="">— tanlang —</option>${teacherOptsHtml}</select>` : ''}
+      <label>Qaysi darsga biriktiriladi</label>
+      <select id="m-video"><option value="">— darsga bog'lanmasin (umumiy material) —</option>${lessonOpts}</select>
+      <label>Turi</label>
+      <select id="m-kind"><option value="kitob">📚 Qo'shimcha kitob</option><option value="lugat">📖 Lug'at (so'zlar)</option><option value="boshqa">📎 Boshqa material</option></select>
+      <label>Lug'at so'zlari (ixtiyoriy). Har qatorda: so'z - tarjima</label>
+      <textarea id="m-note" rows="4" placeholder="книга - kitob&#10;стол - stol"></textarea>
       <label>Fayl yuklash (PDF, Word, PowerPoint, Excel, rasm, audio, ZIP — 50 MB gacha)</label>
       <input type="file" id="m-file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.gif,.webp,.mp3,.m4a,.wav,.mp4,.zip,.rar">
       <label>Yoki havola (ixtiyoriy — fayl yuklamasangiz)</label>
@@ -5437,13 +5605,18 @@ async function saveMaterial(role){
   let teacherId;
   if(role==='admin'){
     teacherId = document.getElementById('m-teacher').value;
-    if(!teacherId){ err.textContent = 'O\'qituvchini tanlang.'; return; }
   }else{
     const u = curUser();
     const t = DB.teachers.find(x=>x.userId===u.id);
     teacherId = t ? t.id : null;
   }
-  if(!title || (!url && !file)){ err.textContent = 'Sarlavhani kiriting va fayl yuklang (yoki havola kiriting).'; return; }
+  const videoIdSel = (document.getElementById('m-video')||{}).value || null;
+  let kindSel = (document.getElementById('m-kind')||{}).value || 'kitob';
+  const noteSel = ((document.getElementById('m-note')||{}).value || '').trim();
+  if(noteSel && kindSel==='kitob' && !file && !url) kindSel = 'lugat';
+  if(role==='admin' && !teacherId && videoIdSel){ const lv = DB.videos.find(x=>x.id===videoIdSel); if(lv) teacherId = lv.teacherId; }
+  if(role==='admin' && !teacherId){ err.textContent = 'O\'qituvchini tanlang.'; return; }
+  if(!title || (!url && !file && !noteSel)){ err.textContent = 'Sarlavhani kiriting va fayl yuklang, havola yoki lug\'at so\'zlarini kiriting.'; return; }
   if(file && file.size > 50*1024*1024){ err.textContent = 'Fayl 50 MB dan katta. Kichikroq fayl yuklang.'; return; }
   const btn = document.querySelector('.modal-bg .btn.gold');
   let finalUrl = url;
@@ -5457,7 +5630,20 @@ async function saveMaterial(role){
       if(upErr) throw upErr;
       finalUrl = sb.storage.from('materials').getPublicUrl(path).data.publicUrl;
     }
-    const newMat = await insertRow('materials', {title, teacherId, url: finalUrl, date:todayStr()});
+    const mPayload = {title, teacherId, url: finalUrl||'', date:todayStr(), videoId: videoIdSel, kind: kindSel, note: noteSel||null};
+    const droppedM = []; let newMat;
+    for(let i=0;i<4;i++){
+      try{ newMat = await insertRow('materials', mPayload); break; }
+      catch(e1){
+        const mm = String((e1&&(e1.message||e1.details))||'');
+        const col = (mm.match(/'(\w+)' column/)||mm.match(/column "?(\w+)"?/)||[])[1];
+        const key = {video_id:'videoId', kind:'kind', note:'note'}[col];
+        if(key && key in mPayload){ delete mPayload[key]; droppedM.push(col); continue; }
+        throw e1;
+      }
+    }
+    if(!newMat) throw new Error('Material yaratilmadi');
+    if(droppedM.length) alert("Material saqlandi, lekin bazada "+droppedM.join(', ')+" ustuni yo'q, shuning uchun darsga biriktirilmadi. Supabase'da dars_tuzilma.sql ni ishga tushiring.");
     DB.materials.push(newMat);
     document.querySelector('.modal-bg').remove();
     renderMain();
@@ -7061,8 +7247,10 @@ async function submitTest(auto){
     answers: JSON.stringify(currentAnswers)
   });
   DB.testAttempts.push(newAttempt);
+  const doneTest = DB.tests.find(t=>t.id===currentTestId);
   currentTestId = null;
   activeTab = 'tests';
+  if(onlineOnly(u)){ activeTab = 'videos'; courseState.open = (doneTest && doneTest.videoId) || null; }
   renderNav();
   renderMain();
   alert(`Test yakunlandi. Natija: ${score}/${questions.length}` + (auto ? ' (vaqt tugagani uchun avtomatik yakunlandi)' : ''));
