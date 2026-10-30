@@ -93,6 +93,7 @@ function stripRows(ctx, table, rows) {
     if (!r || typeof r !== 'object') return r;
     const o = Object.assign({}, r);
     if (table === 'users') delete o.password;
+    if (table === 'videos' && role === 'student' && o.opened === false) o.url = '';
     if (table === 'teachers') {
       const own = ctx && ctx.tid && o.id === ctx.tid;
       if (!isAdmin(ctx) && !own) delete o.face_descriptor;
@@ -184,6 +185,7 @@ async function policy(ctx, table, op, filters, payload) {
       return P;
     }
     if (ADMIN_ONLY_WRITE.includes(table)) return DENY();
+    if (table === 'videos') { if (op === 'insert') P.rowSet = { opened: false }; else P.omitCols = ['opened']; return P; }
     if (table === 'users') {
       if (op === 'insert') { P.rowSet = { role: 'student' }; P.cols = ['username', 'password', 'name', 'phone', 'status']; return P; }
       P.check = async () => {
@@ -270,6 +272,7 @@ async function execute(ctx, body) {
     let rows = isArr ? vals : [vals];
     if (!rows.length || rows.length > 500 || rows.some(r => !r || typeof r !== 'object')) return { status: 400, error: { message: "Noto'g'ri ma'lumot" } };
     if (Array.isArray(P.cols)) rows = rows.map(r => pick(r, P.cols));
+    if (P.omitCols) rows = rows.map(r => { const c = Object.assign({}, r); P.omitCols.forEach(k => delete c[k]); return c; });
     if (op === 'update') rows = rows.map(r => { const c = Object.assign({}, r); delete c.id; return c; });
     rows = rows.map(r => Object.assign({}, r, P.rowSet));
     if (op === 'update' && !Object.keys(rows[0]).length) return { status: 403, error: { message: "Ruxsat yo'q" } };
@@ -371,8 +374,9 @@ function mount(app) {
       if (!ctx) return res.status(401).json({ error: 'auth' });
       if (!(isStaffCtx(ctx) || (ctx.role === 'student' && ctx.online))) return res.status(403).json({ error: 'forbidden' });
       const id = String(req.query.id || '');
-      const { data: v } = await sc.from('videos').select('url').eq('id', id).maybeSingle();
+      const { data: v } = await sc.from('videos').select('*').eq('id', id).maybeSingle();
       if (!v || !v.url) return res.status(404).json({ error: 'yoq' });
+      if (ctx.role === 'student' && v.opened === false) return res.status(403).json({ error: 'yopiq' });
       const m = String(v.url).match(/\/storage\/v1\/object\/public\/videos\/([^?]+)/);
       if (!m) return res.json({ url: v.url });
       const { data, error } = await sc.storage.from('videos').createSignedUrl(decodeURIComponent(m[1]), 7200);

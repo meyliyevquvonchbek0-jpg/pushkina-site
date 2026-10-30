@@ -5125,6 +5125,7 @@ function wordsTableHtml(note){
   if(!rows.length) return '';
   return `<table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:14px;">${rows.map(r=>`<tr><td style="padding:5px 8px;border-bottom:1px solid var(--border);font-weight:600;">${wEsc(r[0])}</td><td style="padding:5px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">${wEsc(r[1])}</td></tr>`).join('')}</table>`;
 }
+function isLessonOpen(v){ return v.opened!==false; }
 function courseOpen(id){ courseState.open = id; renderMain(); try{ window.scrollTo(0,0); }catch(e){} }
 function courseLockedClick(prevTitle){ alert('Bu dars hali yopiq. Avval "'+prevTitle+'" darsini oxirigacha ko\'rib, testini topshiring.'); }
 function renderCourse(u){
@@ -5135,14 +5136,15 @@ function renderCourse(u){
   const stats = ordered.map(v=>lessonStats(v, s));
   if(courseState.open){
     const i = ordered.findIndex(v=>v.id===courseState.open);
-    if(i>=0 && (i===0 || stats[i-1].done)) return renderCourseDetail(u, s, ordered, stats, i);
+    if(i>=0 && isLessonOpen(ordered[i]) && (i===0 || stats[i-1].done)) return renderCourseDetail(u, s, ordered, stats, i);
     courseState.open = null;
   }
   const doneCount = stats.filter(x=>x.done).length;
   const pct = ordered.length ? Math.round(doneCount*100/ordered.length) : 0;
   const cards = ordered.map((v,i)=>{
     const st = stats[i], n = lessonLabel(v, i);
-    const locked = i>0 && !stats[i-1].done;
+    const adminLocked = !isLessonOpen(v);
+    const locked = adminLocked || (i>0 && !stats[i-1].done);
     const mats = lessonMaterials(v.id).length;
     const hw = DB.homework.filter(h=>h.videoId===v.id).length;
     const vidLine = st.watched ? '<span style="color:var(--green);">✅ ko\'rildi</span>' : ((st.vp && st.vp.maxWatchedSeconds>0) ? '⏳ ko\'rilmoqda' : 'hali ko\'rilmagan');
@@ -5158,7 +5160,7 @@ function renderCourse(u){
     const extra = [];
     if(mats) extra.push('📎 '+mats+' ta material');
     if(hw) extra.push('📝 '+hw+' ta vazifa');
-    const badge = st.done ? '<span class="pill green">✅ Tugatilgan</span>' : (locked ? '<span class="pill gray">🔒 Yopiq</span>' : ((st.watched||st.attempts.length||(st.vp&&st.vp.maxWatchedSeconds>0)) ? '<span class="pill gold">Jarayonda</span>' : '<span class="pill gray">Boshlanmagan</span>'));
+    const badge = st.done ? '<span class="pill green">✅ Tugatilgan</span>' : (adminLocked ? '<span class="pill gray">🔒 Hali ochilmagan</span>' : locked ? '<span class="pill gray">🔒 Yopiq</span>' : ((st.watched||st.attempts.length||(st.vp&&st.vp.maxWatchedSeconds>0)) ? '<span class="pill gold">Jarayonda</span>' : '<span class="pill gray">Boshlanmagan</span>'));
     const prevTitle = i>0 ? ordered[i-1].title : '';
     return `<div class="card" style="margin-bottom:12px;${locked?'opacity:.7;':''}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
@@ -5169,7 +5171,7 @@ function renderCourse(u){
         ${testLine?`<div>${testLine}</div>`:''}
         ${extra.length?`<div style="color:var(--text-dim);">${extra.join(' · ')}</div>`:''}
       </div>
-      <div style="margin-top:10px;">${locked ? `<button class="btn sm outline" onclick="courseLockedClick('${String(prevTitle).replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">🔒 Yopiq: avval oldingi darsni tugating</button>` : `<button class="btn sm gold" onclick="courseOpen('${v.id}')">${st.done?'Qayta ko\'rish →':'Darsni ochish →'}</button>`}</div>
+      <div style="margin-top:10px;">${adminLocked ? `<button class="btn sm outline" onclick="alert('Bu darsni administrator hali ochmagan. Ochilganda shu yerda ko\\'rinadi.')">🔒 Administrator hali ochmagan</button>` : locked ? `<button class="btn sm outline" onclick="courseLockedClick('${String(prevTitle).replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">🔒 Yopiq: avval oldingi darsni tugating</button>` : `<button class="btn sm gold" onclick="courseOpen('${v.id}')">${st.done?'Qayta ko\'rish →':'Darsni ochish →'}</button>`}</div>
     </div>`;
   }).join('');
   const tnames = teachers.map(id=>teacherName(id)).filter(Boolean).join(', ');
@@ -5218,11 +5220,32 @@ function staffLessonTools(v, u){
   const mats = lessonMaterials(v.id).length;
   const tst = DB.tests.find(t=>!t.isLive && t.videoId===v.id);
   const hw = DB.homework.filter(h=>h.videoId===v.id).length;
-  return `<div style="font-size:12.5px;color:var(--text-dim);margin-top:6px;">${tst?'🧪 Test bor':'🧪 Test yo\'q'} · 📎 ${mats} material · 📝 ${hw} vazifa</div>
+  const openPill = isLessonOpen(v) ? '<span class="pill green">🔓 Talabalarga ochiq</span>' : '<span class="pill gray">🔒 Yopiq (talabalar ko\'rmaydi)</span>';
+  return `<div style="margin-top:6px;">${openPill}</div><div style="font-size:12.5px;color:var(--text-dim);margin-top:6px;">${tst?'🧪 Test bor':'🧪 Test yo\'q'} · 📎 ${mats} material · 📝 ${hw} vazifa</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
       <button class="btn sm outline" onclick="openMaterialModal('${u.role}','${v.id}')">+ Kitob / lug'at</button>
       <button class="btn sm outline" onclick="editLesson('${v.id}')">✏️ Raqam / nom</button>
+      ${(u.role==='admin') ? `<button class="btn sm ${isLessonOpen(v)?'outline':'gold'}" onclick="toggleLessonOpen('${v.id}')">${isLessonOpen(v)?'🔒 Yopish':'🔓 Ochish'}</button><button class="btn sm outline" onclick="openLessonsUpTo('${v.id}')">🔓 Shu darsgacha ochish</button>` : ''}
     </div>`;
+}
+async function toggleLessonOpen(id){
+  const v = DB.videos.find(x=>x.id===id); if(!v) return;
+  const nv = !isLessonOpen(v);
+  try{ await updateRow('videos', id, {opened:nv}); v.opened = nv; renderMain(); }
+  catch(e){ alert('Saqlanmadi: '+((e&&e.message)||'')+" (dars_ochish.sql ishga tushirilganmi?)"); }
+}
+async function openLessonsUpTo(id){
+  const v = DB.videos.find(x=>x.id===id); if(!v) return;
+  const list = lessonSort(DB.videos.filter(x=>x.teacherId===v.teacherId));
+  const idx = list.findIndex(x=>x.id===id);
+  if(!confirm((idx+1)+"-darsgacha ("+list[idx].title+") ochiladi, undan keyingi darslar yopiladi. Davom etasizmi?")) return;
+  try{
+    for(let i=0;i<list.length;i++){
+      const want = i<=idx;
+      if(isLessonOpen(list[i])!==want){ await updateRow('videos', list[i].id, {opened:want}); list[i].opened = want; }
+    }
+    renderMain();
+  }catch(e){ alert('Saqlanmadi: '+((e&&e.message)||'')+" (dars_ochish.sql ishga tushirilganmi?)"); }
 }
 async function editLesson(id){
   const v = DB.videos.find(x=>x.id===id); if(!v) return;
@@ -5508,12 +5531,13 @@ async function saveVideo(){
     }
   }
   const noVal = parseInt((document.getElementById('v-no')||{}).value, 10);
-  const vPayload = {title, teacherId: teacherId||null, url: finalUrl, date:todayStr()};
+  const vPayload = {title, teacherId: teacherId||null, url: finalUrl, date:todayStr(), opened:false};
   if(!isNaN(noVal)) vPayload.lessonNo = noVal;
   let newVideo;
   try{ newVideo = await insertRow('videos', vPayload); }
   catch(e1){
-    if('lessonNo' in vPayload && /lesson_no|column/i.test(String((e1&&(e1.message||e1.details))||''))){ delete vPayload.lessonNo; newVideo = await insertRow('videos', vPayload); alert("Video saqlandi, lekin dars raqami saqlanmadi: Supabase'da dars_tuzilma.sql ni ishga tushiring."); }
+    if('opened' in vPayload && /opened|column/i.test(String((e1&&(e1.message||e1.details))||'')) && !/lesson_no/i.test(String((e1&&(e1.message||e1.details))||''))){ delete vPayload.opened; newVideo = await insertRow('videos', vPayload); alert("Video saqlandi, lekin dars ochish ustuni yo'q — hozircha hamma darslar ochiq. Supabase'da dars_ochish.sql ni ishga tushiring."); }
+    else if('lessonNo' in vPayload && /lesson_no|column/i.test(String((e1&&(e1.message||e1.details))||''))){ delete vPayload.lessonNo; newVideo = await insertRow('videos', vPayload); alert("Video saqlandi, lekin dars raqami saqlanmadi: Supabase'da dars_tuzilma.sql ni ishga tushiring."); }
     else { err.textContent = 'Saqlanmadi: '+((e1&&(e1.message||e1.details))||"noma'lum"); btn.disabled = false; btn.textContent = 'Saqlash'; return; }
   }
   DB.videos.push(newVideo);

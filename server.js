@@ -144,7 +144,7 @@ app.post('/api/daily/owner', async (req, res) => {
 
 app.get('/api/daily/room/:room', async (req, res) => {
   if (!dailyReady(res)) return;
-  if (!dailyLimit(req, res, 600)) return;
+  if (!dailyLimit(req, res, 3000)) return;
   const room = cleanRoom(req.params.room);
   if (!room) return res.status(404).json({ ok: false, error: 'Dars topilmadi.' });
   try {
@@ -156,7 +156,7 @@ app.get('/api/daily/room/:room', async (req, res) => {
 
 app.post('/api/daily/join', async (req, res) => {
   if (!dailyReady(res)) return;
-  if (!dailyLimit(req, res, 120)) return;
+  if (!dailyLimit(req, res, 3000)) return;
   const room = cleanRoom(req.body && req.body.room);
   const name = cleanName(req.body && req.body.name, '');
   if (!room || !name) return res.status(400).json({ ok: false, error: 'Ismingizni kiriting.' });
@@ -197,7 +197,7 @@ app.post('/api/daily/class', async (req, res) => {
 
 app.post('/api/daily/classjoin', async (req, res) => {
   if (!dailyReady(res)) return;
-  if (!dailyLimit(req, res, 200)) return;
+  if (!dailyLimit(req, res, 3000)) return;
   const room = classRoomName(req.body && req.body.teacherId);
   const name = cleanName(req.body && req.body.name, '');
   if (!room || !name) return res.status(400).json({ ok: false, error: 'Ma\'lumot yetarli emas.' });
