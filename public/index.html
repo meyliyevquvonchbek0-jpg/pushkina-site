@@ -5012,12 +5012,25 @@ function updatePaymentSplitPreview(){
   const half = amount/2;
   el.textContent = amount>0 ? `Markazga: ${half.toLocaleString()} so'm · O'qituvchiga: ${half.toLocaleString()} so'm` : '';
 }
+async function deletePaymentRec(id, studentId, studentName){
+  const p = DB.payments.find(x=>x.id===id); if(!p) return;
+  if(!confirm(p.date+" sanadagi "+Number(p.amount).toLocaleString()+" so'mlik to'lov o'chiriladi (bu to'lov o'qituvchi oyligidan ham ayriladi). Davom etasizmi?")) return;
+  try{
+    await deleteRow('payments', id);
+    DB.payments = DB.payments.filter(x=>x.id!==id);
+    document.querySelector('.modal-bg').remove();
+    renderMain();
+    showPaymentHistoryModal(studentId, studentName);
+  }catch(e){ alert("O'chirilmadi: "+((e&&e.message)||'')); }
+}
 function showPaymentHistoryModal(studentId, studentName){
+  const isAdminNow = !!(session && session.role==='admin');
   const recs = DB.payments.filter(p=>p.studentId===studentId).sort((a,b)=>b.date.localeCompare(a.date));
   const rows = recs.map(p=>`<tr>
     <td>${p.date}</td>
     <td>${Number(p.amount).toLocaleString()} so'm${p.installmentPart?` (1/2-qism)`:''}</td>
     <td>${p.paidUntil} gacha</td>
+    ${isAdminNow?`<td><button class="btn sm outline" style="color:var(--rose);" onclick="deletePaymentRec('${p.id}','${studentId}','${String(studentName).replace(/'/g,"\\'")}')">🗑 O'chirish</button></td>`:''}
   </tr>`).join('');
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
@@ -5025,7 +5038,7 @@ function showPaymentHistoryModal(studentId, studentName){
     <div class="modal">
       <h3>To'lovlar tarixi — ${studentName}</h3>
       <table>
-        <thead><tr><th>Sana</th><th>Summa</th><th>Muddat</th></tr></thead>
+        <thead><tr><th>Sana</th><th>Summa</th><th>Muddat</th>${isAdminNow?'<th></th>':''}</tr></thead>
         <tbody>${rows || '<tr><td colspan="3" class="empty">Hali to\'lov kiritilmagan</td></tr>'}</tbody>
       </table>
       <div class="modal-actions" style="margin-top:14px;">

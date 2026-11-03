@@ -185,6 +185,7 @@ async function policy(ctx, table, op, filters, payload) {
       return P;
     }
     if (ADMIN_ONLY_WRITE.includes(table)) return DENY();
+    if (table === 'payments' && op === 'delete') return DENY();
     if (table === 'videos') { if (op === 'insert') P.rowSet = { opened: false }; else P.omitCols = ['opened']; return P; }
     if (table === 'users') {
       if (op === 'insert') { P.rowSet = { role: 'student' }; P.cols = ['username', 'password', 'name', 'phone', 'status']; return P; }
