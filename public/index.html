@@ -5177,7 +5177,7 @@ function renderCourse(u){
   const stats = ordered.map(v=>lessonStats(v, s));
   if(courseState.open){
     const i = ordered.findIndex(v=>v.id===courseState.open);
-    if(i>=0 && isLessonOpen(ordered[i]) && (i===0 || stats[i-1].done)) return renderCourseDetail(u, s, ordered, stats, i);
+    if(i>=0 && isLessonOpen(ordered[i])) return renderCourseDetail(u, s, ordered, stats, i);
     courseState.open = null;
   }
   const doneCount = stats.filter(x=>x.done).length;
@@ -5185,7 +5185,7 @@ function renderCourse(u){
   const cards = ordered.map((v,i)=>{
     const st = stats[i], n = lessonLabel(v, i);
     const adminLocked = !isLessonOpen(v);
-    const locked = adminLocked || (i>0 && !stats[i-1].done);
+    const locked = adminLocked;
     const mats = lessonMaterials(v.id).length;
     const hw = DB.homework.filter(h=>h.videoId===v.id).length;
     const vidLine = st.watched ? '<span style="color:var(--green);">✅ ko\'rildi</span>' : ((st.vp && st.vp.maxWatchedSeconds>0) ? '⏳ ko\'rilmoqda' : 'hali ko\'rilmagan');
@@ -5266,8 +5266,26 @@ function staffLessonTools(v, u){
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
       <button class="btn sm outline" onclick="openMaterialModal('${u.role}','${v.id}')">+ Kitob / lug'at</button>
       <button class="btn sm outline" onclick="editLesson('${v.id}')">✏️ Raqam / nom</button>
-      ${(u.role==='admin') ? `<button class="btn sm ${isLessonOpen(v)?'outline':'gold'}" onclick="toggleLessonOpen('${v.id}')">${isLessonOpen(v)?'🔒 Yopish':'🔓 Ochish'}</button><button class="btn sm outline" onclick="openLessonsUpTo('${v.id}')">🔓 Shu darsgacha ochish</button>` : ''}
+      ${(u.role==='admin') ? `<button class="btn sm ${isLessonOpen(v)?'outline':'gold'}" onclick="toggleLessonOpen('${v.id}')">${isLessonOpen(v)?'🔒 Yopish':'🔓 Ochish'}</button><button class="btn sm outline" onclick="openLessonsUpTo('${v.id}')">🔓 Shu darsgacha ochish</button><button class="btn sm outline" style="color:var(--rose);" onclick="deleteLesson('${v.id}')">🗑 O'chirish</button>` : ''}
     </div>`;
+}
+async function deleteLesson(id){
+  const v = DB.videos.find(x=>x.id===id); if(!v) return;
+  const tests = DB.tests.filter(t=>t.videoId===id), mats = DB.materials.filter(m=>m.videoId===id), hws = DB.homework.filter(h=>h.videoId===id);
+  const info = [tests.length?tests.length+' ta test':'', mats.length?mats.length+' ta material':'', hws.length?hws.length+' ta vazifa':''].filter(Boolean).join(', ');
+  if(!confirm('"'+v.title+'" darsi o\'chiriladi'+(info?' (shu darsga bog\'langan: '+info+' ham o\'chadi)':'')+'. Buni qaytarib bo\'lmaydi. Davom etasizmi?')) return;
+  try{
+    for(const t of tests){ await deleteRow('tests', t.id); }
+    for(const m of mats){ await deleteRow('materials', m.id); }
+    for(const h of hws){ await deleteRow('homework', h.id); }
+    await deleteRow('videos', id);
+    DB.tests = DB.tests.filter(t=>t.videoId!==id); DB.materials = DB.materials.filter(m=>m.videoId!==id); DB.homework = DB.homework.filter(h=>h.videoId!==id);
+    DB.videos = DB.videos.filter(x=>x.id!==id);
+    DB.videoProgress = DB.videoProgress.filter(x=>x.videoId!==id);
+    const m = String(v.url||'').match(/\/storage\/v1\/object\/public\/videos\/([^?]+)/);
+    if(m){ try{ await sbReal.storage.from('videos').remove([decodeURIComponent(m[1])]); }catch(e){ console.warn('storage remove', e); } }
+    renderMain();
+  }catch(e){ alert("O'chirilmadi: "+((e&&e.message)||'')); }
 }
 async function toggleLessonOpen(id){
   const v = DB.videos.find(x=>x.id===id); if(!v) return;
@@ -5311,7 +5329,7 @@ function renderVideos(u){
   if(videosTeacherFilter) videoList = videoList.filter(v=>v.teacherId===videosTeacherFilter);
   /* ketma-ket ochilish: oldingi dars (video + test >=60% yoki urinishlar tugagan) tugamaguncha keyingisi qulflangan */
   const seqS = (u.role==='student') ? DB.students.find(x=>x.userId===u.id) : null;
-  const seqOn = !!(seqS && seqS.onlineApproved);
+  const seqOn = false; /* ketma-ket qoida olib tashlangan: darslarni faqat administrator ochadi */
   const seqAsc = DB.videos.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const seqPrevOf = v=>{ let p = null; for(const x of seqAsc){ if(x.id===v.id) break; if(x.teacherId===v.teacherId) p = x; } return p; };
   const seqDone = vd=>{
