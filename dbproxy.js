@@ -39,21 +39,31 @@ const ctxCache = new Map();
 async function loadCtx(uid) {
   const c = ctxCache.get(uid);
   if (c && Date.now() - c.at < 30000) return c.ctx;
-  const { data: u } = await sc.from('users').select(SAFE_USER_COLS).eq('id', uid).maybeSingle();
-  let ctx = null;
-  if (u && u.status !== 'pending') {
-    ctx = { uid: String(u.id), role: u.role, user: u, sid: null, tid: null, online: true };
-    if (u.role === 'student') {
-      const { data } = await sc.from('students').select('id,online_approved').eq('user_id', u.id).limit(1);
-      ctx.sid = data && data[0] ? data[0].id : null;
-      ctx.online = !!(data && data[0] && data[0].online_approved);
-    } else if (u.role === 'teacher') {
-      const { data } = await sc.from('teachers').select('id').eq('user_id', u.id).limit(1);
-      ctx.tid = data && data[0] ? data[0].id : null;
+  try {
+    const { data: u, error: e1 } = await sc.from('users').select(SAFE_USER_COLS).eq('id', uid).maybeSingle();
+    if (e1) throw e1;
+    let ctx = null;
+    if (u && u.status !== 'pending') {
+      ctx = { uid: String(u.id), role: u.role, user: u, sid: null, tid: null, online: true };
+      if (u.role === 'student') {
+        const { data, error } = await sc.from('students').select('id,online_approved').eq('user_id', u.id).limit(1);
+        if (error) throw error;
+        ctx.sid = data && data[0] ? data[0].id : null;
+        ctx.online = !!(data && data[0] && data[0].online_approved);
+      } else if (u.role === 'teacher') {
+        const { data, error } = await sc.from('teachers').select('id').eq('user_id', u.id).limit(1);
+        if (error) throw error;
+        ctx.tid = data && data[0] ? data[0].id : null;
+      }
     }
+    ctxCache.set(uid, { at: Date.now(), ctx });
+    return ctx;
+  } catch (e) {
+    /* vaqtinchalik baza xatosi: foydalanuvchini chiqarib yubormaymiz */
+    console.error('loadCtx', e && e.message);
+    if (c && c.ctx) return c.ctx;
+    const err = new Error('db-temp'); err.temp = true; throw err;
   }
-  ctxCache.set(uid, { at: Date.now(), ctx });
-  return ctx;
 }
 async function ctxFromReq(req) {
   if (!ENABLED) return null;
@@ -349,7 +359,7 @@ function mount(app) {
   });
 
   app.get('/api/me', async (req, res) => {
-    const ctx = await ctxFromReq(req);
+    let ctx; try { ctx = await ctxFromReq(req); } catch (e) { return res.status(503).json({ ok: false, temp: true }); }
     if (!ctx) return res.status(401).json({ ok: false });
     res.json({ ok: true, user: ctx.user });
   });
