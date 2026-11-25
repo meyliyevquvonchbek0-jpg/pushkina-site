@@ -371,11 +371,13 @@ const k1sc = (process.env.SUPABASE_SERVICE_KEY ? require('@supabase/supabase-js'
     else console.log('kitob1 tts bucket: bor');
   } catch (e) { console.log('kitob1 tts bucket xato:', e.message); }
 })();
-async function k1make(text) {
-  const name = crypto.createHash('sha1').update(EL_VOICE + '|' + EL_MODEL + '|' + text).digest('hex') + '.mp3';
+const K1_VOICES = { liam: 'TX3LPaxmHKxFdv7VOQHJ', will: 'bIHbv24MWmeRgasZH58o', charlie: 'IKne3meq5aSn9XLyUdCD', eric: 'cjVigY5qzO86Huf0OWal', chris: 'iP95p4xoKVk53GoZ742B' };
+async function k1make(text, voice) {
+  voice = voice || EL_VOICE;
+  const name = crypto.createHash('sha1').update(voice + '|' + EL_MODEL + '|' + text).digest('hex') + '.mp3';
   const pub = SB_URL + '/storage/v1/object/public/tts/kitob1/' + name;
   try { const h = await fetch(pub, { method: 'HEAD' }); if (h.ok) return { url: pub }; } catch (e) {}
-  const r = await fetch(EL_BASE + '/v1/text-to-speech/' + EL_VOICE + '?output_format=mp3_44100_128', {
+  const r = await fetch(EL_BASE + '/v1/text-to-speech/' + voice + '?output_format=mp3_44100_128', {
     method: 'POST', headers: { 'xi-api-key': EL_KEY, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
     body: JSON.stringify({ text, model_id: EL_MODEL, language_code: 'ru', voice_settings: { stability: 0.55, similarity_boost: 0.75 } })
   });
@@ -394,8 +396,10 @@ app.get('/api/kitob1-tts', async (req, res) => {
   const text = k1clean(req.query.t);
   if (!K1_ALLOWED.has(text)) return res.status(400).send('not allowed');
   try {
-    if (!k1pending.has(text)) k1pending.set(text, k1make(text).finally(() => setTimeout(() => k1pending.delete(text), 60000)));
-    const out = await k1pending.get(text);
+    const voice = K1_VOICES[req.query.v] || EL_VOICE;
+    const pk = voice + '|' + text;
+    if (!k1pending.has(pk)) k1pending.set(pk, k1make(text, voice).finally(() => setTimeout(() => k1pending.delete(pk), 60000)));
+    const out = await k1pending.get(pk);
     if (out.url) return res.redirect(302, out.url);
     res.setHeader('Content-Type', 'audio/mpeg'); res.setHeader('Cache-Control', 'public, max-age=86400');
     res.end(out.buf);
