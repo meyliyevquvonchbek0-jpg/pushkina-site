@@ -362,11 +362,14 @@ try {
   console.log('kitob1 tts: ' + K1_ALLOWED.size + ' ta matn');
 } catch (e) { console.log('kitob1 tts: data o\'qilmadi', e.message); }
 const k1pending = new Map();
+const k1sc = (process.env.SUPABASE_SERVICE_KEY ? require('@supabase/supabase-js').createClient(SB_URL, process.env.SUPABASE_SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } }) : null);
 (async () => {  // "tts" bucket (bir marta yaratiladi)
-  if (!EL_KEY || !SB_KEY) return;
+  if (!EL_KEY || !k1sc) return console.log('kitob1 tts: kesh o\'chiq (SUPABASE_SERVICE_KEY yo\'q)');
   try {
-    await fetch(SB_URL + '/storage/v1/bucket', { method: 'POST', headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'tts', name: 'tts', public: true }) });
-  } catch (e) {}
+    const { data } = await k1sc.storage.getBucket('tts');
+    if (!data) { const { error } = await k1sc.storage.createBucket('tts', { public: true }); console.log('kitob1 tts bucket:', error ? error.message : 'yaratildi'); }
+    else console.log('kitob1 tts bucket: bor');
+  } catch (e) { console.log('kitob1 tts bucket xato:', e.message); }
 })();
 async function k1make(text) {
   const name = crypto.createHash('sha1').update(EL_VOICE + '|' + EL_MODEL + '|' + text).digest('hex') + '.mp3';
@@ -378,9 +381,12 @@ async function k1make(text) {
   });
   if (!r.ok) throw new Error('elevenlabs ' + r.status + ' ' + (await r.text()).slice(0, 200));
   const buf = Buffer.from(await r.arrayBuffer());
-  try {
-    await fetch(SB_URL + '/storage/v1/object/tts/kitob1/' + name, { method: 'POST', headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'audio/mpeg', 'x-upsert': 'true' }, body: buf });
-  } catch (e) {}
+  if (k1sc) {
+    try {
+      const { error } = await k1sc.storage.from('tts').upload('kitob1/' + name, buf, { contentType: 'audio/mpeg', upsert: true, cacheControl: '31536000' });
+      if (error) console.log('kitob1 tts kesh xato:', error.message);
+    } catch (e) { console.log('kitob1 tts kesh xato:', e.message); }
+  }
   return { buf };
 }
 app.get('/api/kitob1-tts', async (req, res) => {
