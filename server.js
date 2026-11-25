@@ -338,4 +338,62 @@ app.post('/api/generate-flashcards', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 8080;
+
+// ===== Kitob 1: ElevenLabs ovozi (har bir gap bir marta yaratiladi va Supabase'da saqlanadi) =====
+// Railway → Variables: ELEVENLABS_API_KEY (majburiy), ELEVENLABS_VOICE_ID (ixtiyoriy)
+const crypto = require('crypto');
+const fsK1 = require('fs');
+const EL_KEY = process.env.ELEVENLABS_API_KEY || '';
+const EL_VOICE = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
+const EL_MODEL = process.env.ELEVENLABS_MODEL || 'eleven_multilingual_v2';
+const EL_BASE = process.env.ELEVENLABS_BASE || 'https://api.elevenlabs.io';
+const k1clean = (t) => String(t || '').replace(/́/g, '').replace(/\[[^\]]*\]/g, '').replace(/—/g, ',').replace(/\s+/g, ' ').trim();
+const K1_ALLOWED = new Set();
+try {
+  const html = fsK1.readFileSync(path.join(__dirname, 'public', 'kitob1.html'), 'utf8');
+  const m = html.match(/const DATA = (\{[\s\S]*?\});\n/);
+  const data = JSON.parse(m[1]);
+  for (const L of Object.values(data)) {
+    for (const w of (L.words || [])) K1_ALLOWED.add(k1clean(w[2] || w[0]));
+    for (const p of (L.phrases || [])) K1_ALLOWED.add(k1clean(p[2] || p[0]));
+    for (const d of ((L.dialogue && L.dialogue.lines) || [])) K1_ALLOWED.add(k1clean(d[1]));
+    for (const r of ((L.reading && L.reading.text) || [])) K1_ALLOWED.add(k1clean(r));
+  }
+  console.log('kitob1 tts: ' + K1_ALLOWED.size + ' ta matn');
+} catch (e) { console.log('kitob1 tts: data o\'qilmadi', e.message); }
+const k1pending = new Map();
+(async () => {  // "tts" bucket (bir marta yaratiladi)
+  if (!EL_KEY || !SB_KEY) return;
+  try {
+    await fetch(SB_URL + '/storage/v1/bucket', { method: 'POST', headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'tts', name: 'tts', public: true }) });
+  } catch (e) {}
+})();
+async function k1make(text) {
+  const name = crypto.createHash('sha1').update(EL_VOICE + '|' + EL_MODEL + '|' + text).digest('hex') + '.mp3';
+  const pub = SB_URL + '/storage/v1/object/public/tts/kitob1/' + name;
+  try { const h = await fetch(pub, { method: 'HEAD' }); if (h.ok) return { url: pub }; } catch (e) {}
+  const r = await fetch(EL_BASE + '/v1/text-to-speech/' + EL_VOICE + '?output_format=mp3_44100_128', {
+    method: 'POST', headers: { 'xi-api-key': EL_KEY, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
+    body: JSON.stringify({ text, model_id: EL_MODEL, language_code: 'ru', voice_settings: { stability: 0.55, similarity_boost: 0.75 } })
+  });
+  if (!r.ok) throw new Error('elevenlabs ' + r.status + ' ' + (await r.text()).slice(0, 200));
+  const buf = Buffer.from(await r.arrayBuffer());
+  try {
+    await fetch(SB_URL + '/storage/v1/object/tts/kitob1/' + name, { method: 'POST', headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'audio/mpeg', 'x-upsert': 'true' }, body: buf });
+  } catch (e) {}
+  return { buf };
+}
+app.get('/api/kitob1-tts', async (req, res) => {
+  if (!EL_KEY) return res.status(503).send('tts off');
+  const text = k1clean(req.query.t);
+  if (!K1_ALLOWED.has(text)) return res.status(400).send('not allowed');
+  try {
+    if (!k1pending.has(text)) k1pending.set(text, k1make(text).finally(() => setTimeout(() => k1pending.delete(text), 60000)));
+    const out = await k1pending.get(text);
+    if (out.url) return res.redirect(302, out.url);
+    res.setHeader('Content-Type', 'audio/mpeg'); res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.end(out.buf);
+  } catch (e) { console.log('kitob1 tts xato:', e.message); res.status(502).send('tts error'); }
+});
+
 app.listen(PORT, () => console.log(`Pushkina site running on port ${PORT}`));
