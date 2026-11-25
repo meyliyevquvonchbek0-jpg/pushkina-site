@@ -344,7 +344,7 @@ const PORT = process.env.PORT || 8080;
 const crypto = require('crypto');
 const fsK1 = require('fs');
 const EL_KEY = process.env.ELEVENLABS_API_KEY || '';
-const EL_VOICE = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
+const EL_VOICE = process.env.ELEVENLABS_VOICE_ID || 'oKxkBkm5a8Bmrd1Whf2c'; // Prince Nur (ruscha, yigit)
 const EL_MODEL = process.env.ELEVENLABS_MODEL || 'eleven_multilingual_v2';
 const EL_BASE = process.env.ELEVENLABS_BASE || 'https://api.elevenlabs.io';
 const k1clean = (t) => String(t || '').replace(/́/g, '').replace(/\[[^\]]*\]/g, '').replace(/—/g, ',').replace(/\s+/g, ' ').trim();
@@ -371,7 +371,7 @@ const k1sc = (process.env.SUPABASE_SERVICE_KEY ? require('@supabase/supabase-js'
     else console.log('kitob1 tts bucket: bor');
   } catch (e) { console.log('kitob1 tts bucket xato:', e.message); }
 })();
-const K1_VOICES = { liam: 'TX3LPaxmHKxFdv7VOQHJ', will: 'bIHbv24MWmeRgasZH58o', charlie: 'IKne3meq5aSn9XLyUdCD', eric: 'cjVigY5qzO86Huf0OWal', chris: 'iP95p4xoKVk53GoZ742B' };
+const K1_VOICES = { nur: 'oKxkBkm5a8Bmrd1Whf2c', rachel: '21m00Tcm4TlvDq8ikWAM', liam: 'TX3LPaxmHKxFdv7VOQHJ', will: 'bIHbv24MWmeRgasZH58o', charlie: 'IKne3meq5aSn9XLyUdCD', eric: 'cjVigY5qzO86Huf0OWal', chris: 'iP95p4xoKVk53GoZ742B' };
 async function k1make(text, voice) {
   voice = voice || EL_VOICE;
   const name = crypto.createHash('sha1').update(voice + '|' + EL_MODEL + '|' + text).digest('hex') + '.mp3';
