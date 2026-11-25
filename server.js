@@ -20,6 +20,9 @@ app.use((req, res, next) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Kitob 1 ("Говорим по-русски!") — QR-kod audio sahifalari: /kitob1 va /kitob1/01 ... /kitob1/p2
+app.get(['/kitob1', '/kitob1/:id'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'kitob1.html')));
+
 const SYSTEM_PROMPTS = {
   ru: (level) => `Sen — rus tilini mashq qilish uchun do'stona suhbatdoshsan. Suhbatdoshingning darajasi ${level} (CEFR shkalasi bo'yicha). FAQAT rus tilida gaplash, ${level} darajasiga mos so'z boyligi va grammatikadan foydalan. Javoblaringni qisqa tut (2-3 gap). Jiddiy xatolarni muloyimlik bilan tuzat, lekin ortiqcha tanqid qilma. Iliq va rag'batlantiruvchi bo'l.`,
   en: (level) => `You are a friendly conversation partner for English practice. Your partner's level is ${level} (CEFR scale). Speak ONLY in English, using vocabulary and grammar appropriate for ${level} level. Keep your responses short (2-3 sentences). Gently correct serious mistakes, but don't be overly critical. Be warm and encouraging.`
