@@ -1,0 +1,9 @@
+<!DOCTYPE html><html lang="uz"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ovoz namunalari</title>
+<style>body{font-family:system-ui,sans-serif;max-width:520px;margin:24px auto;padding:0 16px;background:#f6f3ff;color:#222}h1{font-size:22px}.c{background:#fff;border-radius:14px;padding:14px 16px;margin:12px 0;box-shadow:0 2px 8px #0001}.c b{font-size:18px}.c p{margin:4px 0 10px;color:#666;font-size:14px}audio{width:100%}.t{background:#fff8e6;border-radius:10px;padding:10px 12px;font-size:15px}</style></head><body>
+<h1>Ovoz namunalari</h1><div class="t">Привет! Меня зовут Ваня. Мне четырнадцать лет. Я из России, из Москвы.</div>
+<div id="list"></div>
+<script>
+const T="Привет! Меня зовут Ваня. Мне четырнадцать лет. Я из России, из Москвы.";
+const V=[["liam","1. Liam","yosh yigit, tetik"],["will","2. Will","yosh yigit, yumshoq"],["charlie","3. Charlie","yosh yigit, jonli"],["","4. Hozirgi ayol ovozi","solishtirish uchun"]];
+document.getElementById("list").innerHTML=V.map(([v,n,d])=>`<div class="c"><b>${n}</b><p>${d}</p><audio controls preload="none" src="/api/kitob1-tts?${v?"v="+v+"&":""}t=${encodeURIComponent(T)}"></audio></div>`).join("");
+</script></body></html>
