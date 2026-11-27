@@ -22,6 +22,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Kitob 1 ("Говорим по-русски!") — QR-kod audio sahifalari: /kitob1 va /kitob1/01 ... /kitob1/p2
 app.get(['/kitob1', '/kitob1/:id'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'kitob1.html')));
+app.get(['/kitob2', '/kitob2/:id'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'kitob2.html')));
 
 const SYSTEM_PROMPTS = {
   ru: (level) => `Sen — rus tilini mashq qilish uchun do'stona suhbatdoshsan. Suhbatdoshingning darajasi ${level} (CEFR shkalasi bo'yicha). FAQAT rus tilida gaplash, ${level} darajasiga mos so'z boyligi va grammatikadan foydalan. Javoblaringni qisqa tut (2-3 gap). Jiddiy xatolarni muloyimlik bilan tuzat, lekin ortiqcha tanqid qilma. Iliq va rag'batlantiruvchi bo'l.`,
@@ -350,9 +351,14 @@ const EL_BASE = process.env.ELEVENLABS_BASE || 'https://api.elevenlabs.io';
 const k1clean = (t) => String(t || '').replace(/́/g, '').replace(/\[[^\]]*\]/g, '').replace(/—/g, ',').replace(/\s+/g, ' ').trim();
 const K1_ALLOWED = new Set();
 try {
-  const html = fsK1.readFileSync(path.join(__dirname, 'public', 'kitob1.html'), 'utf8');
-  const m = html.match(/const DATA = (\{[\s\S]*?\});\n/);
-  const data = JSON.parse(m[1]);
+  const data = {};
+  for (const f of ['kitob1.html', 'kitob2.html']) {
+    try {
+      const html = fsK1.readFileSync(path.join(__dirname, 'public', f), 'utf8');
+      const m = html.match(/const DATA = (\{[\s\S]*?\});\n/);
+      Object.entries(JSON.parse(m[1])).forEach(([k, v]) => { data[f + k] = v; });
+    } catch (e) { console.log('kitob tts: ' + f + ' o\'qilmadi'); }
+  }
   for (const L of Object.values(data)) {
     for (const w of (L.words || [])) K1_ALLOWED.add(k1clean(w[2] || w[0]));
     for (const p of (L.phrases || [])) K1_ALLOWED.add(k1clean(p[2] || p[0]));
